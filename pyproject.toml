@@ -1,0 +1,21 @@
+[project]
+name = "instaclean"
+version = "0.0.1"
+description = "Local, UI-driven batch removal of your own Instagram likes (Playwright)."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+# Runtime: one direct dependency. Exact versions + hashes live in requirements.lock.
+dependencies = [
+    "playwright==1.63.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pip-audit==2.10.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
