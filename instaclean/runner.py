@@ -14,7 +14,13 @@ from typing import Callable, Protocol, Sequence
 from .batch import next_batch_target, plan_batch_size
 from .checkpoint import CheckpointStore, SessionState, utcnow
 from .config import HARD_BATCH_CAP, Config
-from .errors import ActionNotSubmitted, StopCondition, StopReason, UncertainOutcome
+from .errors import (
+    ActionNotSubmitted,
+    RetryableError,
+    StopCondition,
+    StopReason,
+    UncertainOutcome,
+)
 from .verifier import classify_batch, hashes
 
 log = logging.getLogger(__name__)
@@ -176,6 +182,11 @@ class SessionRunner:
             session.stop_reason = exc.reason.value
             session.stop_detail = exc.detail
             log.error("STOP: %s", exc)
+        except RetryableError as exc:  # escaped its retry loop: classified stop
+            session.status = "uncertain" if session.uncertain else "stopped"
+            session.stop_reason = StopReason.UNEXPECTED_UI.value
+            session.stop_detail = str(exc)
+            log.error("STOP: unexpected UI state: %s", exc)
         except Exception as exc:  # unexpected: record and stop, never continue
             session.status = "error"
             session.stop_reason = StopReason.INTERNAL_ERROR.value

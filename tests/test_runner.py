@@ -290,3 +290,15 @@ def test_non_block_stop_does_not_trigger_block_cooldown(cfg, store, rng):
     ui.ignore_unlike = True
     run(ui, real(cfg), store, rng, limit=3)
     assert "last_block" not in store.load_state()
+
+
+def test_stray_retryable_error_is_a_classified_stop(cfg, store, rng):
+    from instaclean.errors import RetryableError
+    ui = FakeLikesUI(30)
+
+    def flaky():
+        raise RetryableError("page still loading")
+
+    ui.ensure_ready = flaky
+    s = run(ui, cfg, store, rng)
+    assert s.status == "stopped" and s.stop_reason == "unexpected_ui"

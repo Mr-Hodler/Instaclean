@@ -40,6 +40,7 @@ T = TypeVar("T")
 NAV_TIMEOUT_MS = 30_000
 UI_TIMEOUT_MS = 10_000
 LOAD_MORE_TIMEOUT_MS = 8_000
+SPINNER_GRACE_MS = 2_000
 SELECT_CONFIRM_TIMEOUT_S = 3.0
 REMOVAL_TIMEOUT_S = 30.0
 LOGIN_WAIT_S = 600
@@ -320,8 +321,8 @@ class InstagramLikesUI:
         except StopCondition as exc:
             if exc.reason is not StopReason.SELECTOR_FAILURE:
                 raise
-            log.warning("Menu navigation failed (%s). Opening the Likes page URL directly.",
-                        exc.detail)
+            log.info("Menu path not usable here (%s). Opening the Likes page URL directly.",
+                     exc.detail)
             self._goto(self.origin + S.LIKES_PATH + "/")
         if not S.is_likes_url(self.page.url):
             raise StopCondition(StopReason.UNEXPECTED_PAGE,
@@ -366,12 +367,15 @@ class InstagramLikesUI:
         return int(self.page.evaluate(_COUNT_JS, {"selectors": list(S.CHECKBOX_SELECTORS)}))
 
     def _wait_spinner_gone(self) -> None:
+        """Best effort. Instagram keeps a loading indicator at the bottom of the
+        list while more items exist, so it may never disappear: readiness is
+        decided by the Select control / checkbox counts, not by this."""
         spinner = self.page.locator(S.SPINNER)
         try:
             if spinner.count() and spinner.first.is_visible():
-                spinner.first.wait_for(state="hidden", timeout=UI_TIMEOUT_MS)
+                spinner.first.wait_for(state="hidden", timeout=SPINNER_GRACE_MS)
         except PlaywrightTimeout:
-            raise RetryableError("page still loading")
+            log.debug("loading indicator still visible (infinite scroll footer); continuing")
 
     def _read_items(self) -> list[_Item]:
         res = self.page.evaluate(_DISCOVER_JS, {"selectors": list(S.CHECKBOX_SELECTORS),

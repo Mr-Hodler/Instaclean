@@ -39,6 +39,7 @@ LIKES = """<!doctype html><html><head><style>
   <div id="toolbar">__SELECT__</div>
   <div id="grid"></div>
   <div id="bar" style="display:none"><div role="button" id="unlike">Unlike</div></div>
+  <div role="progressbar" data-visualcompletion="loading-state">loading</div>
 </main>
 <script>
 const ALL = __ITEMS__; const CFG = __CFG__;
