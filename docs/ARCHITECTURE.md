@@ -47,29 +47,35 @@ profilo persistente dedicato fuori dal repository, browser visibile (headed).**
 - Nessuna richiesta HTTP diretta del nostro codice: solo `page.goto`, click e
   lettura del DOM.
 
-## Struttura prevista (Phase 1+)
+## Struttura implementata
+
+Rispetto allo schema iniziale il pacchetto sta in `instaclean/` alla radice
+(così `python -m instaclean` funziona senza installazione) e il loop di
+sessione è in `runner.py`, separato dal semplice dimensionamento in `batch.py`.
 
 ```
 Instaclean/
-├── src/instaclean/
-│   ├── config.py        # limiti, DRY_RUN, DEBUG; validazione (hard cap 100)
-│   ├── browser.py       # lancio contesto persistente, chiusura pulita
-│   ├── selectors.py     # TUTTI i locator in un unico punto (role/aria prima)
-│   ├── instagram.py     # navigazione Profile → Your activity → Likes, select, unlike
-│   ├── safety.py        # rilevamento stop condition (CAPTCHA, login, blocked…)
-│   ├── batch.py         # calcolo batch 80–100 vincolato, loop di sessione
-│   ├── verifier.py      # verifica post-azione: attempted/successful/failed/uncertain
-│   ├── checkpoint.py    # JSON atomico (write tmp + rename) dopo ogni batch
-│   ├── errors.py        # tassonomia errori: Retryable / Stop / Uncertain
-│   └── main.py          # CLI: --dry-run (default), --real, --test-size N
-├── tests/               # pytest, senza Instagram (fake page / unit)
-├── docs/                # ARCHITECTURE.md, SECURITY.md
-└── pyproject.toml, requirements*.lock
+├── instaclean/
+│   ├── config.py      # default, .env, validazione (hard cap 100, profilo sicuro)
+│   ├── errors.py      # Retryable / StopCondition / UncertainOutcome / ActionNotSubmitted
+│   ├── batch.py       # randint(80,100) vincolato da cap, sessione, disponibili
+│   ├── verifier.py    # successful / failed / uncertain dopo il reload
+│   ├── checkpoint.py  # JSON atomico 0600, stage, sessioni
+│   ├── safety.py      # classificazione stop da URL, frame, testo (multilingua)
+│   ├── selectors.py   # TUTTI i locator Instagram
+│   ├── runner.py      # gate stage, loop batch, verifica, recovery (no Playwright)
+│   ├── browser.py     # Chromium persistente, headed, profilo dedicato
+│   ├── instagram.py   # navigazione, selezione, Unlike, verifica via UI
+│   └── main.py        # CLI
+├── tests/             # unit + mock DOM (Chromium locale, rete bloccata)
+└── docs/
 ```
+
+Runtime (gitignorati): `logs/`, `checkpoints/`, `debug/`.
 
 Separazione chiave: **la logica pura** (batch, checkpoint, verifica dei
 conteggi, classificazione errori) non importa Playwright ed è coperta da test
-automatici. **Il layer Instagram** è sottile e si verifica con test manuali.
+automatici. **Il layer Instagram** è sottile: è provato contro un DOM simulato locale e, sull'Instagram reale, solo con test manuali.
 
 ## Principi di correttezza
 

@@ -70,10 +70,27 @@ Processi figli generati **dalla libreria** (non dal nostro codice), documentati:
    nessuna porta di rete.
 2. Il driver avvia Chromium, controllato via pipe CDP (non TCP).
 
+Il nostro codice esegue JavaScript nella pagina solo tramite costanti fisse in
+`instagram.py` (`page.evaluate`) per **leggere** il DOM; non costruisce mai
+codice da contenuti della pagina. Unico `subprocess` del repository: in
+`tests/test_security_static.py`, che lancia `git check-ignore` con argomenti fissi.
+
+Un test automatico (`tests/test_security_static.py`) fallisce se il pacchetto
+importa `subprocess`, `socket`, `requests`, `urllib.request`, ecc., chiama
+`eval`/`exec`/`os.system`, accede a `cookies()`/`storage_state()`, o menziona
+endpoint interni (`/api/v1`, `graphql`, `i.instagram.com`).
+
 Il programma non legge password, cookie di altri browser, chiavi SSH,
 Keychain, file personali; non richiede `sudo`; non installa LaunchAgent né
 software. File scritti: solo il profilo dedicato e, nel repo, `logs/`,
-`checkpoints/`, `screenshots/`/`debug/` (tutti gitignorati).
+`checkpoints/`, `debug/` (tutti gitignorati).
+
+Contenuto dei file locali:
+- `checkpoints/`: solo contatori, stati, timestamp e hash SHA-256 abbreviati (16 hex) delle miniature del batch in corso.
+- `logs/`: eventi, conteggi, conteggi dei selettori, messaggi di errore (possono includere URL di pagine Instagram). Nessun cookie o token.
+- `debug/` (solo con `--debug`): screenshot e HTML della pagina. **Possono contenere
+  miniature e nomi di account dei post a cui hai messo Like**: restano in locale,
+  cancellali con `rm -rf debug/` quando non servono.
 
 ## 5. Rete
 
@@ -81,7 +98,8 @@ software. File scritti: solo il profilo dedicato e, nel repo, `logs/`,
 |---|---|---|
 | `uv`/`pip` | pypi.org, files.pythonhosted.org | installazione dipendenze |
 | `pip-audit` | pypi.org / osv.dev (vulnerability DB) | solo quando lanci l'audit |
-| `playwright install chromium` | cdn.playwright.dev, playwright.download.prss.microsoft.com | una tantum, lanciato **a mano** |
+| `playwright install chromium` | cdn.playwright.dev, playwright.download.prss.microsoft.com | una tantum (eseguito il 2026-10-18: Chromium 1243 + headless shell + ffmpeg, ~564 MB in `~/Library/Caches/ms-playwright`) |
+| test mock DOM | nessuna: ogni richiesta è servita localmente o abortita, e il test verifica che nessuna richiesta esterna sia partita | `pytest` |
 | Chromium | instagram.com, CDN Meta (cdninstagram.com, fbcdn.net…) | navigazione normale |
 | Chromium | possibili servizi Google di base (component updater ecc.) | Playwright li riduce con `--disable-background-networking`, `--disable-component-update`; **da confermare** con un'ispezione del traffico in Phase 1 |
 
