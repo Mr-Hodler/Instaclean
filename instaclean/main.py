@@ -77,7 +77,11 @@ def confirm_real(summary: str) -> bool:
         return False
     print("\n" + summary)
     print("Instagram may restrict accounts that use automation; limits here are local caps only.")
-    answer = input("Type UNLIKE (uppercase) to continue: ").strip()
+    try:
+        answer = input("Type UNLIKE (uppercase) to continue: ").strip()
+    except EOFError:
+        log.error("Confirmation input closed: real mode not confirmed")
+        return False
     if answer != "UNLIKE":
         log.error("Confirmation not given (typed %d characters, expected 'UNLIKE')", len(answer))
         return False
@@ -158,7 +162,10 @@ def main(argv: list[str] | None = None) -> int:
         print_summary(session)
         if stopped and sys.stdin.isatty() and not page.is_closed() \
                 and session.stop_reason != StopReason.BROWSER_DISCONNECTED.value:
-            input("Stopped. Inspect the browser, then press Enter to close it...")
+            try:
+                input("Stopped. Inspect the browser, then press Enter to close it...")
+            except EOFError:
+                pass
     return EXIT_CODES.get(session.status, 1)
 
 
