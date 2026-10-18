@@ -18,6 +18,10 @@ MAX_ACTIONS_PER_SESSION = 500
 DRY_RUN = True
 INITIAL_TEST_SIZE = 3
 DEBUG = False
+# Pacing between REAL sessions (hours). Self-imposed, conservative; they do not
+# hide automation and are not Instagram's numbers.
+MIN_HOURS_BETWEEN_SESSIONS = 12.0
+BLOCK_COOLDOWN_HOURS = 72.0
 
 # Hard cap enforced in code: no configuration can raise a batch above this.
 HARD_BATCH_CAP = 100
@@ -48,6 +52,8 @@ class Config:
     dry_run: bool = DRY_RUN
     initial_test_size: int = INITIAL_TEST_SIZE
     debug: bool = DEBUG
+    min_hours_between_sessions: float = MIN_HOURS_BETWEEN_SESSIONS
+    block_cooldown_hours: float = BLOCK_COOLDOWN_HOURS
     profile_dir: Path = field(default_factory=lambda: DEFAULT_PROFILE_DIR.expanduser())
     data_dir: Path = REPO_ROOT
 
@@ -72,6 +78,8 @@ class Config:
             raise ValueError("MAX_ACTIONS_PER_SESSION must be >= 1")
         if not 1 <= self.initial_test_size <= HARD_BATCH_CAP:
             raise ValueError("INITIAL_TEST_SIZE must be between 1 and 100")
+        if self.min_hours_between_sessions < 0 or self.block_cooldown_hours < 0:
+            raise ValueError("cooldown hours must be >= 0")
         check_profile_dir(self.profile_dir, REPO_ROOT)
         return self
 
@@ -126,6 +134,8 @@ _ENV_KEYS = {
     "INSTACLEAN_DRY_RUN": ("dry_run", parse_bool),
     "INSTACLEAN_INITIAL_TEST_SIZE": ("initial_test_size", int),
     "INSTACLEAN_DEBUG": ("debug", parse_bool),
+    "INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS": ("min_hours_between_sessions", float),
+    "INSTACLEAN_BLOCK_COOLDOWN_HOURS": ("block_cooldown_hours", float),
     "INSTACLEAN_PROFILE_DIR": ("profile_dir", lambda v: Path(v).expanduser()),
 }
 

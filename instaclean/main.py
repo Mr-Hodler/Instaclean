@@ -6,6 +6,7 @@
     python -m instaclean --real --limit 20    # small first batch
     python -m instaclean --real               # normal batches (80-100), session cap 500
     python -m instaclean --status             # show checkpoints
+    python -m instaclean --doctor             # check the environment
 
 Real mode needs BOTH  INSTACLEAN_DRY_RUN=false  in .env  AND  --real.
 """
@@ -23,7 +24,7 @@ from datetime import datetime
 from .checkpoint import CheckpointStore, SessionState
 from .config import REPO_ROOT, Config, load_config
 from .errors import StopCondition, StopReason
-from .runner import SessionRunner, check_gate, mark_manual_verified
+from .runner import SessionRunner, check_cooldown, check_gate, mark_manual_verified
 
 log = logging.getLogger("instaclean")
 
@@ -50,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mark-verified", action="store_true",
                    help="record that you checked the 3-like test by hand")
     p.add_argument("--status", action="store_true", help="print checkpoint state and exit")
+    p.add_argument("--doctor", action="store_true",
+                   help="check Python, dependencies, Chromium, profile, .env and git hygiene")
     p.add_argument("--debug", action="store_true", help="save screenshots/DOM snapshots locally")
     return p
 
@@ -102,10 +105,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     store = CheckpointStore(cfg.checkpoints_dir)
+    if args.doctor:
+        from .doctor import run_doctor
+        return run_doctor(cfg, store)
     try:
         if args.status:
             last = store.last_session()
-            print(json.dumps({"stages": store.stages(),
+            state = store.load_state()
+            print(json.dumps({"stages": state["stages"],
+                              "last_real_session": state.get("last_real_session"),
+                              "last_block": state.get("last_block"),
                               "last_session": last.to_dict() if last else None}, indent=2))
             return 0
         if args.mark_verified:
@@ -115,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         last = store.last_session()
         if not (last and last.pending_batch):
             check_gate(store, cfg, args.limit)  # fail before opening the browser
+            check_cooldown(store, cfg)
     except StopCondition as exc:
         print(f"STOP: {exc}")
         return 2

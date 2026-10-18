@@ -35,6 +35,7 @@ class StopReason(str, Enum):
     BROWSER_DISCONNECTED = "browser_disconnected"
     CHECKPOINT_ERROR = "checkpoint_error"
     STAGE_GATE = "stage_gate"
+    COOLDOWN = "cooldown"
     USER_ABORT = "user_abort"
     INTERNAL_ERROR = "internal_error"
 

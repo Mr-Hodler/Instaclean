@@ -109,6 +109,16 @@ class CheckpointStore:
     def stages(self) -> dict[str, str]:
         return dict(self.load_state()["stages"])
 
+    def record_real_session(self, ended_at: str, attempted: int) -> None:
+        state = self.load_state()
+        state["last_real_session"] = {"ended_at": ended_at, "attempted": attempted}
+        self.save_state(state)
+
+    def record_block(self, at: str, reason: str) -> None:
+        state = self.load_state()
+        state["last_block"] = {"at": at, "reason": reason}
+        self.save_state(state)
+
     def mark_stage(self, name: str) -> None:
         if name not in STAGES:
             raise ValueError(f"unknown stage {name}")

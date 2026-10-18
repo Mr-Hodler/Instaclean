@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol, Sequence
 
 from .batch import next_batch_target, plan_batch_size
@@ -72,6 +73,52 @@ def check_gate(store: CheckpointStore, cfg: Config, limit: int | None) -> str:
     return stage
 
 
+# Stops that mean "Instagram is pushing back": real mode then waits longer.
+BLOCK_REASONS = {
+    StopReason.ACTION_BLOCKED.value,
+    StopReason.RATE_LIMIT.value,
+    StopReason.CAPTCHA.value,
+    StopReason.IDENTITY_VERIFICATION.value,
+    StopReason.SECURITY_WARNING.value,
+}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def check_cooldown(store: CheckpointStore, cfg: Config, now: datetime | None = None) -> None:
+    """Refuse REAL mode during the self-imposed pauses. Dry runs are never paused.
+
+    - after a block-type stop: block_cooldown_hours (default 72h)
+    - after a real session of normal size (>= BATCH_MIN actions):
+      min_hours_between_sessions (default 12h)
+    """
+    if cfg.dry_run:
+        return
+    now = now or _now()
+    state = store.load_state()
+    block = state.get("last_block")
+    if block:
+        until = datetime.fromisoformat(block["at"]) + timedelta(hours=cfg.block_cooldown_hours)
+        if now < until:
+            raise StopCondition(
+                StopReason.COOLDOWN,
+                f"last stop was '{block['reason']}': real mode allowed again after "
+                f"{until.isoformat(timespec='minutes')} (UTC)",
+            )
+    last = state.get("last_real_session")
+    if last and int(last.get("attempted", 0)) >= cfg.batch_min:
+        until = datetime.fromisoformat(last["ended_at"]) + timedelta(
+            hours=cfg.min_hours_between_sessions)
+        if now < until:
+            raise StopCondition(
+                StopReason.COOLDOWN,
+                f"pause between sessions: real mode allowed again after "
+                f"{until.isoformat(timespec='minutes')} (UTC)",
+            )
+
+
 def mark_manual_verified(store: CheckpointStore) -> None:
     if "real_test" not in store.stages():
         raise StopCondition(StopReason.STAGE_GATE, "run the 3-like real test before --mark-verified")
@@ -104,6 +151,7 @@ class SessionRunner:
             self.store.save_session(last)
 
         stage = check_gate(self.store, self.cfg, limit)
+        check_cooldown(self.store, self.cfg)
         max_actions = self.cfg.max_actions_per_session
         if limit is not None:
             max_actions = min(max_actions, limit)
@@ -137,7 +185,14 @@ class SessionRunner:
             self.store.save_session(session)
 
         self._record_stage(session)
+        self._record_pacing(session)
         return session
+
+    def _record_pacing(self, s: SessionState) -> None:
+        if s.mode == "real" and s.attempted > 0:
+            self.store.record_real_session(utcnow(), s.attempted)
+        if s.stop_reason in BLOCK_REASONS:
+            self.store.record_block(utcnow(), s.stop_reason)
 
     # Batch loop -----------------------------------------------------------
     def _loop(self, s: SessionState, max_actions: int) -> None:
@@ -212,13 +267,20 @@ class SessionRunner:
             self.store.save_session(s)
             raise
 
-        still = self.ui.wait_for_removal(batch)
-        if still:
-            log.info("%d items still visible right after Unlike; verifying after reload", len(still))
-
-        self.ui.reload()
-        self.ui.check_safety()
-        after = self.ui.discover(coverage)
+        try:
+            still = self.ui.wait_for_removal(batch)
+            if still:
+                log.info("%d items still visible right after Unlike; verifying after reload",
+                         len(still))
+            self.ui.reload()
+            self.ui.check_safety()
+            after = self.ui.discover(coverage)
+        except StopCondition:
+            # Verification could not finish: the batch stays pending for recovery.
+            s.uncertain += size
+            s.pending_batch["counted_uncertain"] = True
+            self.store.save_session(s)
+            raise
         out = classify_batch(hashes(batch), hashes(after.items), after.end_reached, coverage)
 
         s.successful += out.successful
@@ -273,6 +335,8 @@ class SessionRunner:
             last.stop_detail = f"recovery stopped: {exc.detail}"
             last.status = "recovery_stopped"  # pending_batch kept: next run retries the CHECK
             self.store.save_session(last)
+            if exc.reason.value in BLOCK_REASONS:
+                self.store.record_block(utcnow(), exc.reason.value)
             log.error("Recovery STOP: %s", exc)
             return last
         last.successful += out.successful

@@ -207,10 +207,11 @@ def test_action_not_submitted_is_not_counted(cfg, store, rng):
 def test_stop_conditions_halt_between_batches(cfg, store, rng, reason):
     unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
     ui = FakeLikesUI(1000)
-    ui.safety_after_batches = {1: reason}  # appears after the first batch
+    ui.safety_after_batches = {1: reason}  # appears while verifying the first batch
     s = run(ui, real(cfg), store, rng)
-    assert s.status == "stopped" and s.stop_reason == reason.value
+    assert s.status == "uncertain" and s.stop_reason == reason.value
     assert ui.unlike_calls == 1
+    assert s.pending_batch and s.uncertain == s.attempted  # verified later by recovery
 
 
 def test_stop_during_unlike_counts_batch_as_uncertain(cfg, store, rng):
@@ -237,3 +238,55 @@ def test_unexpected_exception_stops_with_error(cfg, store, rng):
     ui.discover = boom
     s = run(ui, cfg, store, rng)
     assert s.status == "error" and s.stop_reason == "internal_error"
+
+
+# ---- pacing / cooldown ----------------------------------------------------------
+def _ready_all(store):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+
+
+def test_block_stop_triggers_cooldown(cfg, store, rng):
+    from datetime import datetime, timedelta, timezone
+
+    from instaclean.runner import check_cooldown
+    _ready_all(store)
+    ui = FakeLikesUI(1000)
+    ui.safety_after_batches = {1: StopReason.ACTION_BLOCKED}
+    run(ui, real(cfg), store, rng)
+    assert store.load_state()["last_block"]["reason"] == "action_blocked"
+    rec = run(ui, real(cfg), store, rng)  # recovery check is non-destructive: allowed
+    assert rec.status == "recovered" and ui.unlike_calls == 1
+    with pytest.raises(StopCondition) as e:
+        run(FakeLikesUI(10), real(cfg), store, rng)
+    assert e.value.reason is StopReason.COOLDOWN
+    later = datetime.now(timezone.utc) + timedelta(hours=73)
+    check_cooldown(store, real(cfg), now=later)  # allowed again
+    check_cooldown(store, cfg)  # dry run is never paused
+
+
+def test_pause_between_normal_sessions(cfg, store, rng):
+    from datetime import datetime, timedelta, timezone
+
+    from instaclean.runner import check_cooldown
+    _ready_all(store)
+    run(FakeLikesUI(1000), real(cfg), store, rng)
+    with pytest.raises(StopCondition) as e:
+        check_cooldown(store, real(cfg))
+    assert e.value.reason is StopReason.COOLDOWN
+    check_cooldown(store, real(cfg), now=datetime.now(timezone.utc) + timedelta(hours=12, minutes=1))
+    check_cooldown(store, real(cfg, min_hours_between_sessions=0))
+
+
+def test_small_test_runs_do_not_start_the_pause(cfg, store, rng):
+    from instaclean.runner import check_cooldown
+    unlock(store, "dry_run")
+    run(FakeLikesUI(30), real(cfg), store, rng, limit=3)
+    check_cooldown(store, real(cfg))  # 3 < BATCH_MIN: no pause needed
+
+
+def test_non_block_stop_does_not_trigger_block_cooldown(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.ignore_unlike = True
+    run(ui, real(cfg), store, rng, limit=3)
+    assert "last_block" not in store.load_state()

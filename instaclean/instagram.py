@@ -49,6 +49,8 @@ MAX_LOAD_STALLS = 2
 # attribute and returns, per checkbox, the thumbnail src and selection state.
 _DISCOVER_JS = """
 (args) => {
+  // Drop stale tags first so an index can never point at an old element.
+  document.querySelectorAll('[' + args.attr + ']').forEach((e) => e.removeAttribute(args.attr));
   let used = null, boxes = [];
   for (const sel of args.selectors) {
     const found = Array.from(document.querySelectorAll(sel));
