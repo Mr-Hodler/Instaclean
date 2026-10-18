@@ -73,11 +73,15 @@ def setup_logging(cfg: Config) -> None:
 
 def confirm_real(summary: str) -> bool:
     if not sys.stdin.isatty():
-        print("Real mode needs an interactive terminal for confirmation.")
+        log.error("Real mode needs an interactive terminal for confirmation.")
         return False
     print("\n" + summary)
     print("Instagram may restrict accounts that use automation; limits here are local caps only.")
-    return input("Type UNLIKE to continue: ").strip() == "UNLIKE"
+    answer = input("Type UNLIKE (uppercase) to continue: ").strip()
+    if answer != "UNLIKE":
+        log.error("Confirmation not given (typed %d characters, expected 'UNLIKE')", len(answer))
+        return False
+    return True
 
 
 def print_summary(s: SessionState) -> None:
@@ -143,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             session = runner.run(limit=args.limit, confirm=confirm_real)
         except StopCondition as exc:  # gate / user abort before the session exists
-            print(f"STOP: {exc}")
+            log.error("STOP before session start: %s", exc)
             return 2
         stopped = session.status not in ("dry_run_ok", "completed", "session_limit_reached",
                                          "recovered")
