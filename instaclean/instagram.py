@@ -111,6 +111,26 @@ _GREW_JS = """
 }
 """
 
+# Finds the scroll container holding the list (ancestor of the last tagged
+# checkbox), parks it ~400px above its end and returns its centre, so a real
+# wheel event can then cross the "near the end" threshold that triggers loading.
+_SCROLL_NEAR_END_JS = """
+(args) => {
+  const last = document.querySelector('[' + args.attr + '="' + args.idx + '"]');
+  let el = last ? last.parentElement : null;
+  while (el) {
+    const cs = getComputedStyle(el);
+    if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 5) break;
+    el = el.parentElement;
+  }
+  el = el || document.scrollingElement;
+  el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - args.margin);
+  const r = el.getBoundingClientRect();
+  const h = Math.min(r.height || innerHeight, innerHeight);
+  return {x: r.left + r.width / 2, y: Math.max(r.top, 0) + h / 2};
+}
+"""
+
 _THUMBS_JS = """
 (minPx) => Array.from(document.querySelectorAll('main img, [role="main"] img')).filter((im) => {
   const r = im.getBoundingClientRect(); return r.width >= minPx && r.height >= minPx;
@@ -413,25 +433,19 @@ class InstagramLikesUI:
             return False
 
     def _load_more(self, current: int) -> None:
-        """Bring the bottom of the list into view so Instagram loads more.
+        """Make Instagram load the next page of likes.
 
-        Instagram loads the next page when its loading indicator (at the end of
-        the list, inside an inner scroll container) becomes visible.
+        Measured on the real page (2026-10-18): the list lives in an inner scroll
+        container; jumping straight to its end loads nothing, while parking just
+        above the end and then sending a wheel scroll does (27 -> 63 -> 81).
         """
         page = self.page
-        last = page.locator(f'[{S.IDX_ATTR}="{current - 1}"]')
         try:
-            last.scroll_into_view_if_needed(timeout=5000)
-            box = last.bounding_box()
-            if box:
-                page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            page.mouse.wheel(0, 1500)
-        except PlaywrightError:
-            pass
-        try:
-            spinner = page.locator(S.SPINNER)
-            if spinner.count():
-                spinner.last.scroll_into_view_if_needed(timeout=5000)
+            centre = page.evaluate(_SCROLL_NEAR_END_JS,
+                                   {"attr": S.IDX_ATTR, "idx": current - 1, "margin": 400})
+            page.wait_for_timeout(300)
+            page.mouse.move(centre["x"], centre["y"])
+            page.mouse.wheel(0, 2500)
         except PlaywrightError:
             pass
         try:

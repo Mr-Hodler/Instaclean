@@ -237,7 +237,7 @@ pacing between sessions, not how fast the clicks are.
 |---|---|---|
 | Likes per session | 500 (default cap) | `INSTACLEAN_MAX_ACTIONS_PER_SESSION` |
 | Batches per session | ~6 | 80–100 each |
-| Time per batch (estimate) | ~1.5–2.5 min | ticking ~90 checkboxes + confirm + reload + verification |
+| Time per batch | ~1.5–2.5 min | measured on a real account (dry run, 2026-10-18): loading 99 likes ≈ 13 s, ticking 93 checkboxes ≈ 29 s; confirm + reload + verification estimated |
 | Time per session (estimate) | ~10–15 min | |
 | Minimum pause between sessions | 12 h | enforced; `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` |
 | Pause after any block signal | 72 h | enforced; `INSTACLEAN_BLOCK_COOLDOWN_HOURS` |
@@ -264,8 +264,8 @@ gantt
     Sessions 41-60 (30,000)  :a4, after a3, 20d
 ```
 
-The per-batch time is an **estimate from the implementation**, not a measurement on the real
-site. Your first dry run logs timestamps: use them to recompute. Know your real total
+Loading and selection times were measured in a real dry run; the Unlike + verification part
+is still estimated until the first real batches. Your own logs have timestamps to recompute. Know your real total
 first: Instagram → *Accounts Center → Your information and permissions → Download your
 information* lists your liked posts.
 

@@ -144,8 +144,8 @@ batch da ~90). Tempo macchina totale ~10–15 ore; tempo di calendario:
 | 1 sessione/giorno (consigliato) | 500 | ~60 giorni |
 | 1 sessione/giorno da 300 | 300 | ~100 giorni |
 
-Ogni blocco aggiunge almeno 3 giorni. Le stime per batch vanno ricalcolate
-con i tempi reali del primo dry run (timestamp nel log). Il numero reale di
+Ogni blocco aggiunge almeno 3 giorni. Misurato nel dry run reale del 2026-10-18: caricare 99 Like ≈ 13 s,
+selezionarne 93 ≈ 29 s; Unlike + verifica ancora stimati. Il numero reale di
 Like si trova nell'export di Instagram (*Centro gestione account → Le tue
 informazioni → Scarica le tue informazioni*). Se la pagina web non mostra i Like
 più vecchi, Instaclean non può raggiungerli.
