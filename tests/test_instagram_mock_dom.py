@@ -142,3 +142,22 @@ def test_closed_browser_is_detected(make_page):
     with pytest.raises(StopCondition) as e:
         ui.check_safety()
     assert e.value.reason is StopReason.BROWSER_DISCONNECTED
+
+
+def test_list_that_stops_loading_is_not_treated_as_finished(make_page, cfg, store):
+    """Real-world case: Instagram keeps the loading indicator but loads nothing."""
+    fake = FakeInstagram(40, stall_loading=True)  # only the first 12 ever render
+    ui = ui_for(make_page(fake))
+    ui.ensure_ready()
+    disc = ui.discover(30)
+    assert len(disc.items) == 12
+    assert disc.end_reached is False  # spinner still visible: not the end
+
+
+def test_real_batch_works_on_loaded_items_when_list_stalls(make_page, cfg, store):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    fake = FakeInstagram(40, stall_loading=True)
+    s = SessionRunner(ui_for(make_page(fake)), replace(real(cfg), batch_min=20, batch_max=25),
+                      store, random.Random(9)).run(confirm=YES)
+    assert s.batches and s.batches[0]["size"] == 12
+    assert s.batches[0]["successful"] == 12 and s.failed == 0

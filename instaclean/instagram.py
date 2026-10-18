@@ -39,12 +39,12 @@ T = TypeVar("T")
 
 NAV_TIMEOUT_MS = 30_000
 UI_TIMEOUT_MS = 10_000
-LOAD_MORE_TIMEOUT_MS = 8_000
+LOAD_MORE_TIMEOUT_MS = 12_000
 SPINNER_GRACE_MS = 2_000
 SELECT_CONFIRM_TIMEOUT_S = 3.0
 REMOVAL_TIMEOUT_S = 30.0
 LOGIN_WAIT_S = 600
-MAX_LOAD_STALLS = 2
+MAX_LOAD_STALLS = 3
 
 # Lists checkboxes (first selector that matches), tags each with an index
 # attribute and returns, per checkbox, the thumbnail src and selection state.
@@ -405,7 +405,19 @@ class InstagramLikesUI:
         self._baseline = {}
         return True
 
+    def _spinner_visible(self) -> bool:
+        spinner = self.page.locator(S.SPINNER)
+        try:
+            return spinner.count() > 0 and spinner.last.is_visible()
+        except PlaywrightError:
+            return False
+
     def _load_more(self, current: int) -> None:
+        """Bring the bottom of the list into view so Instagram loads more.
+
+        Instagram loads the next page when its loading indicator (at the end of
+        the list, inside an inner scroll container) becomes visible.
+        """
         page = self.page
         last = page.locator(f'[{S.IDX_ATTR}="{current - 1}"]')
         try:
@@ -414,6 +426,12 @@ class InstagramLikesUI:
             if box:
                 page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             page.mouse.wheel(0, 1500)
+        except PlaywrightError:
+            pass
+        try:
+            spinner = page.locator(S.SPINNER)
+            if spinner.count():
+                spinner.last.scroll_into_view_if_needed(timeout=5000)
         except PlaywrightError:
             pass
         try:
@@ -448,7 +466,12 @@ class InstagramLikesUI:
                     skipped = len(items) - len(fps)
                     if skipped:
                         log.warning("%d tiles without a recognizable thumbnail were skipped", skipped)
-                    return Discovery(items=fps, end_reached=True)
+                    # A visible loading indicator means the list is NOT finished.
+                    more = self._spinner_visible()
+                    if more:
+                        log.warning("List stopped growing at %d items but Instagram still shows "
+                                    "a loading indicator: using the loaded items only", len(fps))
+                    return Discovery(items=fps, end_reached=not more)
                 prev = len(items)
                 if items:
                     self._load_more(len(items))

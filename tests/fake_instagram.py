@@ -37,9 +37,11 @@ LIKES = """<!doctype html><html><head><style>
 <a href="/direct/inbox/">Messages</a>
 <main>
   <div id="toolbar">__SELECT__</div>
-  <div id="grid"></div>
+  <div id="scroller" style="height:500px;overflow-y:auto">
+    <div id="grid"></div>
+    <div role="progressbar" id="sentinel" data-visualcompletion="loading-state">loading</div>
+  </div>
   <div id="bar" style="display:none"><div role="button" id="unlike">Unlike</div></div>
-  <div role="progressbar" data-visualcompletion="loading-state">loading</div>
 </main>
 <script>
 const ALL = __ITEMS__; const CFG = __CFG__;
@@ -70,12 +72,15 @@ function renderMore(){
   shown += next.length;
 }
 renderMore();
-window.addEventListener('scroll', () => {
-  if (loading || shown >= ALL.length) return;
-  if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 300) {
-    loading = true; setTimeout(() => { renderMore(); loading = false; }, 150);
-  }
-});
+// Like Instagram: an inner scroll container, and more items load only when the
+// loading indicator at the bottom becomes visible. It disappears at the end.
+const sentinel = document.getElementById('sentinel');
+function syncSentinel(){ if (shown >= ALL.length) sentinel.remove(); }
+syncSentinel();
+new IntersectionObserver((entries) => {
+  if (CFG.stall || !entries.some((e) => e.isIntersecting) || loading || shown >= ALL.length) return;
+  loading = true; setTimeout(() => { renderMore(); syncSentinel(); loading = false; }, 400);
+}, {root: document.getElementById('scroller')}).observe(sentinel);
 const sel = document.getElementById('select');
 if (sel) sel.onclick = () => {
   if (selectMode) { location.reload(); return; }
@@ -103,7 +108,9 @@ document.getElementById('unlike').onclick = () => {
 
 
 class FakeInstagram:
-    def __init__(self, n: int, *, select_cap: int | None = None, block_unlike: bool = False) -> None:
+    def __init__(self, n: int, *, select_cap: int | None = None, block_unlike: bool = False,
+                 stall_loading: bool = False) -> None:
+        self.stall_loading = stall_loading
         self.liked = [f"{1000 + i}_{i * 7}_n.jpg" for i in range(n)]
         self.select_cap = select_cap
         self.block_unlike = block_unlike
@@ -136,7 +143,8 @@ class FakeInstagram:
             select = '<div role="button" id="select">Select</div>' if self.liked else ""
             html = (LIKES.replace("__SELECT__", select)
                     .replace("__ITEMS__", json.dumps(self.liked))
-                    .replace("__CFG__", json.dumps({"selectCap": self.select_cap})))
+                    .replace("__CFG__", json.dumps({"selectCap": self.select_cap,
+                                                    "stall": self.stall_loading})))
         else:
             html = pages.get(path, "<html><body>not found</body></html>")
         route.fulfill(status=200, content_type="text/html", body=html)

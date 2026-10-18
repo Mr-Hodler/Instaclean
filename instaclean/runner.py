@@ -230,7 +230,9 @@ class SessionRunner:
                 raise StopCondition(StopReason.UNEXPECTED_UI, "no items and list not finished")
 
             if len(disc.items) < target and not disc.end_reached:
-                raise StopCondition(StopReason.UNEXPECTED_UI, "fewer items than target, list not finished")
+                # Instagram did not load more in time. Work on what is loaded:
+                # verification then checks exactly that part of the list.
+                log.warning("Only %d of %d items loaded; smaller batch", len(disc.items), target)
             if len(set(disc.items)) != len(disc.items):
                 raise StopCondition(StopReason.UNEXPECTED_UI, "duplicate item identities on page")
 

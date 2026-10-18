@@ -302,3 +302,13 @@ def test_stray_retryable_error_is_a_classified_stop(cfg, store, rng):
     ui.ensure_ready = flaky
     s = run(ui, cfg, store, rng)
     assert s.status == "stopped" and s.stop_reason == "unexpected_ui"
+
+
+def test_partial_load_processes_loaded_items(cfg, store, rng):
+    from instaclean.runner import Discovery
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(500)
+    orig = ui.discover
+    ui.discover = lambda t: Discovery(items=orig(t).items[:27], end_reached=False)
+    s = run(ui, real(cfg, max_actions_per_session=27), store, rng)
+    assert s.batches[0]["size"] == 27 and s.successful == 27
