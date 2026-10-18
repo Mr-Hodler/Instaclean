@@ -312,3 +312,31 @@ def test_partial_load_processes_loaded_items(cfg, store, rng):
     ui.discover = lambda t: Discovery(items=orig(t).items[:27], end_reached=False)
     s = run(ui, real(cfg, max_actions_per_session=27), store, rng)
     assert s.batches[0]["size"] == 27 and s.successful == 27
+
+
+# ---- asynchronous Unlike on Instagram's side ---------------------------------------
+def test_slow_server_side_unlike_is_rechecked_not_repeated(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified")
+    ui = FakeLikesUI(100)
+    ui.delay_reloads = 2  # still listed on the first reload, gone on the second
+    s = run(ui, real(cfg), store, rng, limit=20)
+    assert (s.successful, s.failed, s.uncertain) == (20, 0, 0)
+    assert ui.unlike_calls == 1  # the action was not repeated
+    assert cfg.verify_recheck_seconds in ui.waits
+    assert s.pending_batch is None
+
+
+def test_still_liked_after_rechecks_stops_and_stays_pending(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(100)
+    ui.ignore_unlike = True
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.stop_reason == "verification_failed" and s.failed == 3
+    assert s.pending_batch and s.pending_batch["counted"]["failed"] == 3
+    assert ui.calls.count("reload") == 1 + cfg.verify_rechecks
+    # Later Instagram catches up: the next run re-checks (read-only) and fixes the counts
+    ui.liked = ui.liked[3:]
+    rec = run(ui, real(cfg), store, rng, limit=3)
+    assert rec.status == "recovered"
+    assert (rec.successful, rec.failed, rec.uncertain) == (3, 0, 0)
+    assert ui.unlike_calls == 1

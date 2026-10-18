@@ -33,6 +33,9 @@ class FakeLikesUI:
         self.short_coverage = False  # verification sees too little of the list
         self.select_extra = False  # page selects one item too many
         self.ready_error: StopCondition | None = None
+        self.delayed: list[str] = []  # unliked server-side but still listed
+        self.delay_reloads = 0  # reloads before delayed items disappear
+        self.waits: list[float] = []
 
     def ensure_ready(self) -> None:
         self.calls.append("ensure_ready")
@@ -76,6 +79,9 @@ class FakeLikesUI:
             raise self.raise_on_unlike
         if not self.ignore_unlike:
             gone = set(self.selected)
+            if self.delay_reloads:
+                self.delayed = [f for f in self.liked if f in gone][: len(gone) // 5 or 1]
+                gone -= set(self.delayed)
             self.liked = [f for f in self.liked if f not in gone]
         self.selected = []
 
@@ -84,6 +90,15 @@ class FakeLikesUI:
 
     def reload(self) -> None:
         self.calls.append("reload")
+        if self.delayed:
+            self.delay_reloads -= 1
+            if self.delay_reloads <= 0:
+                gone = set(self.delayed)
+                self.liked = [f for f in self.liked if f not in gone]
+                self.delayed = []
+
+    def wait(self, seconds: float) -> None:
+        self.waits.append(seconds)
 
 
 @pytest.fixture

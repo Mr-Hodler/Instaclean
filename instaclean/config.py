@@ -22,6 +22,11 @@ DEBUG = False
 # hide automation and are not Instagram's numbers.
 MIN_HOURS_BETWEEN_SESSIONS = 12.0
 BLOCK_COOLDOWN_HOURS = 72.0
+# Instagram applies a bulk Unlike asynchronously: give the server time before
+# deciding an item is still liked. Only the CHECK is repeated, never the action.
+POST_UNLIKE_GRACE_SECONDS = 5.0
+VERIFY_RECHECK_SECONDS = 45.0
+VERIFY_RECHECKS = 2
 
 # Hard cap enforced in code: no configuration can raise a batch above this.
 HARD_BATCH_CAP = 100
@@ -54,6 +59,9 @@ class Config:
     debug: bool = DEBUG
     min_hours_between_sessions: float = MIN_HOURS_BETWEEN_SESSIONS
     block_cooldown_hours: float = BLOCK_COOLDOWN_HOURS
+    post_unlike_grace_seconds: float = POST_UNLIKE_GRACE_SECONDS
+    verify_recheck_seconds: float = VERIFY_RECHECK_SECONDS
+    verify_rechecks: int = VERIFY_RECHECKS
     profile_dir: Path = field(default_factory=lambda: DEFAULT_PROFILE_DIR.expanduser())
     data_dir: Path = REPO_ROOT
 
@@ -80,6 +88,9 @@ class Config:
             raise ValueError("INITIAL_TEST_SIZE must be between 1 and 100")
         if self.min_hours_between_sessions < 0 or self.block_cooldown_hours < 0:
             raise ValueError("cooldown hours must be >= 0")
+        if self.verify_rechecks < 0 or self.verify_recheck_seconds < 0 \
+                or self.post_unlike_grace_seconds < 0:
+            raise ValueError("verification timings must be >= 0")
         check_profile_dir(self.profile_dir, REPO_ROOT)
         return self
 
@@ -136,6 +147,8 @@ _ENV_KEYS = {
     "INSTACLEAN_DEBUG": ("debug", parse_bool),
     "INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS": ("min_hours_between_sessions", float),
     "INSTACLEAN_BLOCK_COOLDOWN_HOURS": ("block_cooldown_hours", float),
+    "INSTACLEAN_VERIFY_RECHECK_SECONDS": ("verify_recheck_seconds", float),
+    "INSTACLEAN_VERIFY_RECHECKS": ("verify_rechecks", int),
     "INSTACLEAN_PROFILE_DIR": ("profile_dir", lambda v: Path(v).expanduser()),
 }
 

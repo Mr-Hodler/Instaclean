@@ -520,6 +520,12 @@ class InstagramLikesUI:
             self.check_safety()
         return [it.fp for it in self._read_items() if it.fp and self._is_selected(it)]
 
+    def wait(self, seconds: float) -> None:
+        """Plain wait used only between verification checks (no actions)."""
+        self._alive()
+        if seconds > 0:
+            self.page.wait_for_timeout(int(seconds * 1000))
+
     def cancel_selection(self) -> None:
         """Reloading the page is the most reliable way to clear a selection."""
         self.reload()

@@ -164,6 +164,12 @@ ricarica almeno tante voci quante ne erano caricate prima e confronta le identit
 
 Un'azione incerta non viene mai ripetuta automaticamente.
 
+Instagram applica l'Unlike in blocco in modo asincrono (osservato il 2026-10-18:
+18 voci su 94 ancora in lista ~10 s dopo la conferma). Per questo, se dopo il
+reload alcune voci ricompaiono, Instaclean **ricontrolla** fino a 2 volte a
+distanza di 45 s (solo lettura). Se restano, il batch rimane in sospeso e il
+giro successivo lo ricontrolla prima di fare qualsiasi altra cosa.
+
 ## 8. Checkpoint e recovery
 
 `checkpoints/session-<id>.json` viene salvato prima del click distruttivo e dopo

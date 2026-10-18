@@ -42,6 +42,7 @@ class LikesUI(Protocol):
     def unlike_selected(self) -> None: ...
     def wait_for_removal(self, fingerprints: Sequence[str]) -> set[str]: ...
     def reload(self) -> None: ...
+    def wait(self, seconds: float) -> None: ...
 
 
 # ---- stage gate ---------------------------------------------------------------
@@ -286,22 +287,33 @@ class SessionRunner:
             if still:
                 log.info("%d items still visible right after Unlike; verifying after reload",
                          len(still))
-            self.ui.reload()
-            self.ui.check_safety()
-            after = self.ui.discover(coverage)
+            self.ui.wait(self.cfg.post_unlike_grace_seconds)
+            out = self._verify_once(batch, coverage)
+            for n in range(1, self.cfg.verify_rechecks + 1):
+                if not out.failed:
+                    break
+                log.info("%d items still listed; Instagram may still be processing. "
+                         "Re-checking in %.0fs (check %d/%d, no new action)", out.failed,
+                         self.cfg.verify_recheck_seconds, n, self.cfg.verify_rechecks)
+                self.ui.wait(self.cfg.verify_recheck_seconds)
+                out = self._verify_once(batch, coverage)
         except StopCondition:
             # Verification could not finish: the batch stays pending for recovery.
             s.uncertain += size
             s.pending_batch["counted_uncertain"] = True
             self.store.save_session(s)
             raise
-        out = classify_batch(hashes(batch), hashes(after.items), after.end_reached, coverage)
 
         s.successful += out.successful
         s.failed += out.failed
         s.uncertain += out.uncertain
         s.last_batch_size = size
-        s.pending_batch = None
+        if out.failed or out.uncertain:
+            # Keep the batch so the next run re-checks it (read-only) first.
+            s.pending_batch["counted"] = {"successful": out.successful, "failed": out.failed,
+                                          "uncertain": out.uncertain}
+        else:
+            s.pending_batch = None
         s.batches.append({"size": size, "successful": out.successful, "failed": out.failed,
                           "uncertain": out.uncertain, "at": utcnow()})
         if out.clean:
@@ -314,6 +326,12 @@ class SessionRunner:
             raise StopCondition(StopReason.VERIFICATION_FAILED, f"{out.failed} items still liked")
         if out.uncertain:
             raise UncertainOutcome(f"{out.uncertain} items could not be verified")
+
+    def _verify_once(self, batch: list[str], coverage: int):
+        self.ui.reload()
+        self.ui.check_safety()
+        after = self.ui.discover(coverage)
+        return classify_batch(hashes(batch), hashes(after.items), after.end_reached, coverage)
 
     # Stages -----------------------------------------------------------------
     def _record_stage(self, s: SessionState) -> None:
@@ -335,8 +353,12 @@ class SessionRunner:
         p = last.pending_batch or {}
         log.warning("Session %s has an unverified batch of %s items: verifying, no actions",
                     last.session_id, p.get("size"))
+        prev = p.get("counted") or {}
         if p.get("counted_uncertain"):
             last.uncertain -= int(p["size"])
+        last.successful -= int(prev.get("successful", 0))
+        last.failed -= int(prev.get("failed", 0))
+        last.uncertain -= int(prev.get("uncertain", 0))
         try:
             self.ui.ensure_ready()
             after = self.ui.discover(int(p["coverage"]))
@@ -345,6 +367,9 @@ class SessionRunner:
         except StopCondition as exc:
             if p.get("counted_uncertain"):
                 last.uncertain += int(p["size"])
+            last.successful += int(prev.get("successful", 0))
+            last.failed += int(prev.get("failed", 0))
+            last.uncertain += int(prev.get("uncertain", 0))
             last.stop_reason = exc.reason.value
             last.stop_detail = f"recovery stopped: {exc.detail}"
             last.status = "recovery_stopped"  # pending_batch kept: next run retries the CHECK
