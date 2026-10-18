@@ -163,10 +163,11 @@ class SessionRunner:
             max_actions = min(max_actions, limit)
 
         if not self.cfg.dry_run:
-            summary = (
-                f"REAL MODE: up to {max_actions} unlikes in batches of "
-                f"{self.cfg.batch_min}-{self.cfg.batch_max} (stage: {stage})"
-            )
+            if max_actions <= self.cfg.batch_min:
+                batches = f"one batch of {max_actions}"
+            else:
+                batches = f"batches of {self.cfg.batch_min}-{self.cfg.batch_max}"
+            summary = f"REAL MODE: up to {max_actions} unlikes, {batches} (stage: {stage})"
             if not confirm(summary):
                 raise StopCondition(StopReason.USER_ABORT, "real mode not confirmed")
 
