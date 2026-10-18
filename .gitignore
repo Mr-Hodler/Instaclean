@@ -1,0 +1,48 @@
+# ---- Secrets / config -------------------------------------------------
+.env
+*.env
+.env.*
+!.env.example
+
+# ---- Browser session data (contains Instagram cookies) ---------------
+auth/
+profiles/
+browser-profile/
+sessions/
+.instaclean/
+*.har
+storage_state*.json
+
+# ---- Runtime artefacts (may contain usernames, thumbnails, DOM) -------
+screenshots/
+logs/
+checkpoints/
+debug/
+*.log
+*.png
+*.jpg
+*.jpeg
+*.webm
+*.zip
+playwright-report/
+test-results/
+trace*.zip
+
+# ---- Python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- OS / editors ------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
