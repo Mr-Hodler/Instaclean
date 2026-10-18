@@ -1,0 +1,239 @@
+"""AUTOMATED TEST: session flow against an in-memory fake page.
+
+Covers dry-run, batches, session limit, < 80 left, empty list, selection
+mismatch, verification failure, uncertain outcome, stop conditions, stage gate.
+"""
+
+from __future__ import annotations
+
+import pytest
+from conftest import FakeLikesUI, real, unlock
+
+from instaclean.errors import ActionNotSubmitted, StopCondition, StopReason, UncertainOutcome
+from instaclean.runner import SessionRunner, check_gate, mark_manual_verified, stage_for
+
+YES = lambda _s: True  # noqa: E731
+
+
+def run(ui, cfg, store, rng, limit=None, confirm=YES):
+    return SessionRunner(ui, cfg, store, rng).run(limit=limit, confirm=confirm)
+
+
+# ---- dry run ------------------------------------------------------------------
+def test_dry_run_selects_but_never_unlikes(cfg, store, rng):
+    ui = FakeLikesUI(250)
+    s = run(ui, cfg, store, rng)
+    assert s.status == "dry_run_ok" and s.mode == "dry_run"
+    assert ui.unlike_calls == 0 and len(ui.liked) == 250
+    assert 80 <= s.dry_run_selected <= 100
+    assert s.attempted == 0 and s.successful == 0
+    assert "cancel" in ui.calls
+    assert "dry_run" in store.stages()
+
+
+def test_dry_run_does_not_ask_confirmation(cfg, store, rng):
+    asked = []
+    run(FakeLikesUI(10), cfg, store, rng, confirm=lambda s: asked.append(s) or False)
+    assert asked == []
+
+
+# ---- stage gate ----------------------------------------------------------------
+def test_stage_mapping(cfg):
+    assert stage_for(cfg, None) == "dry_run"
+    rc = real(cfg)
+    assert stage_for(rc, 3) == "real_test"
+    assert stage_for(rc, 20) == "first_batch"
+    assert stage_for(rc, None) == "normal"
+    assert stage_for(rc, 1000) == "normal"
+
+
+def test_real_mode_blocked_without_previous_stages(cfg, store, rng):
+    rc = real(cfg)
+    with pytest.raises(StopCondition) as e:
+        check_gate(store, rc, 3)
+    assert e.value.reason is StopReason.STAGE_GATE
+    with pytest.raises(StopCondition):
+        run(FakeLikesUI(10), rc, store, rng, limit=3)
+    unlock(store, "dry_run")
+    check_gate(store, rc, 3)
+    with pytest.raises(StopCondition):
+        check_gate(store, rc, 20)  # needs manual verification
+    with pytest.raises(StopCondition):
+        mark_manual_verified(store)  # needs real_test
+    unlock(store, "real_test")
+    mark_manual_verified(store)
+    check_gate(store, rc, 20)
+    with pytest.raises(StopCondition):
+        check_gate(store, rc, None)  # needs first_batch
+    unlock(store, "first_batch")
+    check_gate(store, rc, None)
+
+
+def test_full_progression_never_auto_advances(cfg, store, rng):
+    ui = FakeLikesUI(400)
+    run(ui, cfg, store, rng)  # dry run
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.successful == 3 and s.status == "session_limit_reached"
+    assert "real_test" in store.stages() and "manual_verified" not in store.stages()
+    with pytest.raises(StopCondition):
+        run(ui, real(cfg), store, rng, limit=20)
+    mark_manual_verified(store)
+    s = run(ui, real(cfg), store, rng, limit=20)
+    assert s.successful == 20 and "first_batch" in store.stages()
+
+
+def test_real_mode_requires_confirmation(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(10)
+    with pytest.raises(StopCondition) as e:
+        run(ui, real(cfg), store, rng, limit=3, confirm=lambda _s: False)
+    assert e.value.reason is StopReason.USER_ABORT
+    assert ui.unlike_calls == 0
+
+
+# ---- real batches -----------------------------------------------------------
+def test_three_like_test(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(50)
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert (s.attempted, s.successful, s.failed, s.uncertain) == (3, 3, 0, 0)
+    assert len(ui.liked) == 47 and ui.unlike_calls == 1
+
+
+def test_normal_batches_random_80_100_until_session_limit(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(2000)
+    s = run(ui, real(cfg), store, rng)
+    assert s.status == "session_limit_reached"
+    assert s.attempted == 500 and s.successful == 500
+    sizes = [b["size"] for b in s.batches]
+    assert sum(sizes) == 500
+    assert all(sz <= 100 for sz in sizes)
+    assert all(80 <= sz <= 100 for sz in sizes[:-1])  # only the last can be cut by the cap
+    assert len(ui.liked) == 1500
+
+
+def test_custom_session_limit(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(2000)
+    s = run(ui, real(cfg, max_actions_per_session=130), store, rng)
+    assert s.attempted == 130 and s.status == "session_limit_reached"
+
+
+def test_fewer_than_80_left_processed_then_completed(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(150)
+    s = run(ui, real(cfg), store, rng)
+    assert s.status == "completed"
+    assert s.successful == 150 and ui.liked == []
+    assert s.batches[-1]["size"] < 80
+
+
+def test_empty_list(cfg, store, rng):
+    ui = FakeLikesUI(0)
+    s = run(ui, cfg, store, rng)
+    assert s.status == "completed" and ui.unlike_calls == 0
+
+
+# ---- anomalies --------------------------------------------------------------
+def test_selection_mismatch_stops_before_unlike(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(300)
+    ui.select_cap = 50  # page refuses to select more than 50
+    s = run(ui, real(cfg), store, rng)
+    assert s.status == "stopped" and s.stop_reason == "selection_mismatch"
+    assert ui.unlike_calls == 0 and s.attempted == 0
+
+
+def test_extra_selected_item_stops(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.select_extra = True
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.stop_reason == "selection_mismatch" and ui.unlike_calls == 0
+
+
+def test_verification_failure_items_still_liked(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.ignore_unlike = True
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.status == "stopped" and s.stop_reason == "verification_failed"
+    assert (s.attempted, s.successful, s.failed) == (3, 0, 3)
+    assert ui.unlike_calls == 1  # never retried
+    assert "real_test" not in store.stages()
+
+
+def test_unverifiable_coverage_is_uncertain_and_stops(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    real_discover = ui.discover
+    calls = {"n": 0}
+
+    def discover(target):
+        calls["n"] += 1
+        ui.short_coverage = calls["n"] > 1  # only the post-unlike check is short
+        return real_discover(target)
+
+    ui.discover = discover
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.status == "uncertain" and s.stop_reason == "uncertain_result"
+    assert s.uncertain == 3 and s.successful == 0 and ui.unlike_calls == 1
+
+
+def test_uncertain_unlike_stops_and_keeps_pending(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.raise_on_unlike = UncertainOutcome("dialog never closed")
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.status == "uncertain" and s.uncertain == 3 and s.attempted == 3
+    assert s.pending_batch and len(s.pending_batch["fp_hashes"]) == 3
+    assert ui.unlike_calls == 1
+
+
+def test_action_not_submitted_is_not_counted(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.raise_before_unlike = ActionNotSubmitted(StopReason.SELECTOR_FAILURE, "no button")
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.status == "stopped" and s.attempted == 0 and s.uncertain == 0
+    assert s.pending_batch is None
+
+
+@pytest.mark.parametrize("reason", [
+    StopReason.CAPTCHA, StopReason.ACTION_BLOCKED, StopReason.RATE_LIMIT,
+    StopReason.LOGIN_REQUIRED, StopReason.IDENTITY_VERIFICATION, StopReason.SECURITY_WARNING,
+])
+def test_stop_conditions_halt_between_batches(cfg, store, rng, reason):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    ui = FakeLikesUI(1000)
+    ui.safety_after_batches = {1: reason}  # appears after the first batch
+    s = run(ui, real(cfg), store, rng)
+    assert s.status == "stopped" and s.stop_reason == reason.value
+    assert ui.unlike_calls == 1
+
+
+def test_stop_during_unlike_counts_batch_as_uncertain(cfg, store, rng):
+    unlock(store, "dry_run")
+    ui = FakeLikesUI(30)
+    ui.raise_on_unlike = StopCondition(StopReason.ACTION_BLOCKED, "toast")
+    s = run(ui, real(cfg), store, rng, limit=3)
+    assert s.stop_reason == "action_blocked" and s.uncertain == 3 and s.pending_batch
+
+
+def test_browser_disconnected_at_start(cfg, store, rng):
+    ui = FakeLikesUI(30)
+    ui.ready_error = StopCondition(StopReason.BROWSER_DISCONNECTED, "closed")
+    s = run(ui, cfg, store, rng)
+    assert s.status == "stopped" and s.stop_reason == "browser_disconnected"
+
+
+def test_unexpected_exception_stops_with_error(cfg, store, rng):
+    ui = FakeLikesUI(30)
+
+    def boom(_t):
+        raise KeyError("x")
+
+    ui.discover = boom
+    s = run(ui, cfg, store, rng)
+    assert s.status == "error" and s.stop_reason == "internal_error"

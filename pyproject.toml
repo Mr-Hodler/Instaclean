@@ -18,4 +18,6 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["browser: runs local Chromium against a mock DOM (no network)"]
 addopts = "-ra"
