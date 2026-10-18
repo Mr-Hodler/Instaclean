@@ -103,3 +103,12 @@ def test_default_profile_is_outside_repo():
     from instaclean.config import REPO_ROOT
     p = Config().profile_dir.resolve()
     assert REPO_ROOT.resolve() not in p.parents
+
+
+def test_doctor_reports_without_side_effects(cfg, store):
+    from instaclean.doctor import collect
+    rows = collect(cfg, store)
+    names = {w for _, w, _ in rows}
+    assert {"python", "playwright", "chromium", "profile dir", ".gitignore", "stages"} <= names
+    assert not cfg.profile_dir.exists()  # doctor creates nothing
+    assert not store.dir.exists()
