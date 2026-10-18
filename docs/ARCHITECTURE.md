@@ -66,6 +66,7 @@ Instaclean/
 │   ├── runner.py      # gate stage, loop batch, verifica, recovery (no Playwright)
 │   ├── browser.py     # Chromium persistente, headed, profilo dedicato
 │   ├── instagram.py   # navigazione, selezione, Unlike, verifica via UI
+│   ├── doctor.py      # --doctor: controllo ambiente in sola lettura
 │   └── main.py        # CLI
 ├── tests/             # unit + mock DOM (Chromium locale, rete bloccata)
 └── docs/
@@ -89,7 +90,9 @@ automatici. **Il layer Instagram** è sottile: è provato contro un DOM simulato
    per il rendering, mai come meccanismo di elusione.
 5. `DRY_RUN=True` di default; il real mode richiede un flag esplicito e non è
    mai attivato automaticamente.
-6. Batch: `randint(80, 100)` poi `min(batch, 100, rimanenti_sessione,
+6. Pacing obbligatorio del real mode: 12 h tra sessioni normali, 72 h dopo
+   qualunque segnale di blocco. Riduce il volume; non nasconde l'automazione.
+7. Batch: `randint(80, 100)` poi `min(batch, 100, rimanenti_sessione,
    disponibili)`. 100 è un **hard cap nel codice**, non configurabile oltre.
 
 ## Da verificare manualmente in Phase 1 (non assunto)
