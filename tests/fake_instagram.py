@@ -65,6 +65,9 @@ function renderMore(){
   const next = ALL.slice(shown, shown + PAGE);
   for (const fp of next) {
     const t = document.createElement('div'); t.className = 'tile'; t.dataset.fp = fp;
+    const kind = (ALL.indexOf(fp) % 3 === 0) ? 'Photo' : 'Video';
+    t.setAttribute('aria-label', kind + ', ' + (ALL.indexOf(fp) + 1) + ' of ' + ALL.length + ', by @someone');
+    t.dataset.kind = kind;
     t.innerHTML = '<img alt="" src="https://scontent-xyz.cdninstagram.com/v/t51.2885-15/' + fp + '?stp=a&oh=b">';
     if (selectMode) addBox(t);
     grid.appendChild(t);
@@ -109,8 +112,9 @@ document.getElementById('unlike').onclick = () => {
 
 class FakeInstagram:
     def __init__(self, n: int, *, select_cap: int | None = None, block_unlike: bool = False,
-                 stall_loading: bool = False) -> None:
+                 stall_loading: bool = False, logged_in: bool = True) -> None:
         self.stall_loading = stall_loading
+        self.logged_in = logged_in
         self.liked = [f"{1000 + i}_{i * 7}_n.jpg" for i in range(n)]
         self.select_cap = select_cap
         self.block_unlike = block_unlike
@@ -145,6 +149,8 @@ class FakeInstagram:
                     .replace("__ITEMS__", json.dumps(self.liked))
                     .replace("__CFG__", json.dumps({"selectCap": self.select_cap,
                                                     "stall": self.stall_loading})))
+        elif not self.logged_in:
+            html = '<html><body><input name="username"><input name="password"></body></html>'
         else:
             html = pages.get(path, "<html><body>not found</body></html>")
         route.fulfill(status=200, content_type="text/html", body=html)

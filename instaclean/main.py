@@ -54,6 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--doctor", action="store_true",
                    help="check Python, dependencies, Chromium, profile, .env and git hygiene")
     p.add_argument("--debug", action="store_true", help="save screenshots/DOM snapshots locally")
+    p.add_argument("--login", action="store_true",
+                   help="open a visible browser, log in by hand, then close (no likes touched)")
+    p.add_argument("--logout", action="store_true",
+                   help="wipe the dedicated browser profile (local logout) and exit")
     p.add_argument("--unattended", action="store_true",
                    help="scheduled normal sessions without the UNLIKE prompt; needs "
                         "INSTACLEAN_ALLOW_UNATTENDED=true in .env and all stages done")
@@ -132,6 +136,15 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     store = CheckpointStore(cfg.checkpoints_dir)
+    if args.logout:
+        from .browser import wipe_profile
+        wiped = wipe_profile(cfg.profile_dir)
+        print("Profile wiped: logged out on this Mac." if wiped else "No profile to wipe.")
+        print("Also log out the session on Instagram: Settings > Accounts Center > "
+              "Password and security > Where you're logged in.")
+        return 0
+    if args.login:
+        return run_login(cfg)
     if args.doctor:
         from .doctor import run_doctor
         return run_doctor(cfg, store)
@@ -157,15 +170,47 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     setup_logging(cfg)
-    log.info("Instaclean starting: dry_run=%s limit=%s debug=%s", cfg.dry_run, args.limit, cfg.debug)
+    log.info("Instaclean starting: dry_run=%s limit=%s browser=%s content=%s debug=%s",
+             cfg.dry_run, args.limit, cfg.browser_mode, cfg.content, cfg.debug)
 
     # Imported here so --status / --mark-verified work without a browser.
-    from .browser import open_browser
+    from .browser import expire_login_if_needed, open_browser, record_login, wipe_profile
     from .instagram import InstagramLikesUI
 
+    expire_login_if_needed(cfg)
     rng = random.Random()
+    interactive = cfg.browser_mode == "visible" and not args.unattended
+    try:
+        return _run_session(cfg, args, store, rng, interactive, open_browser, record_login,
+                            InstagramLikesUI)
+    finally:
+        if cfg.wipe_profile_after_run:
+            wipe_profile(cfg.profile_dir)
+
+
+def run_login(cfg: Config) -> int:
+    """Visible browser, manual login (2FA included), record the login time, close."""
+    setup_logging(cfg)
+    from .browser import open_browser, record_login
+    from .instagram import InstagramLikesUI
+
+    with open_browser(cfg, force_visible=True) as (_context, page):
+        ui = InstagramLikesUI(page, random.Random(), on_logged_in=lambda: record_login(cfg.profile_dir))
+        try:
+            ui.ensure_logged_in()
+        except StopCondition as exc:
+            log.error("Login not completed: %s", exc)
+            return 2
+    print(f"Logged in. The login expires on this Mac after {cfg.session_max_days} days"
+          if cfg.session_max_days else "Logged in.")
+    return 0
+
+
+def _run_session(cfg, args, store, rng, interactive, open_browser, record_login,
+                 InstagramLikesUI) -> int:
     with open_browser(cfg) as (_context, page):
-        ui = InstagramLikesUI(page, rng)
+        ui = InstagramLikesUI(page, rng, content=cfg.content, interactive_login=interactive,
+                              on_logged_in=lambda: record_login(cfg.profile_dir))
         runner = SessionRunner(ui, cfg, store, rng)
         try:
             if args.unattended:
@@ -183,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
                 ui.capture_debug(cfg.debug_dir / session.session_id, session.status)
         print_summary(session)
         if stopped and sys.stdin.isatty() and not page.is_closed() \
+                and cfg.browser_mode != "headless" \
                 and session.stop_reason != StopReason.BROWSER_DISCONNECTED.value:
             try:
                 input("Stopped. Inspect the browser, then press Enter to close it...")

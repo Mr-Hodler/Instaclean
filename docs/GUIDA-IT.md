@@ -251,14 +251,48 @@ browser o file personali; nessun `sudo`. Dettagli in [SECURITY.md](SECURITY.md).
   presentato in modo nuovo potrebbe non essere riconosciuto. Il browser è sempre
   visibile proprio per questo.
 
+## Opzioni
+
+| Variabile | Valori | Effetto |
+|---|---|---|
+| `INSTACLEAN_BROWSER` | `visible` (default) · `background` · `headless` | finestra normale · finestra ridotta a icona · nessuna finestra (Instagram vede "HeadlessChrome": niente è nascosto) |
+| `INSTACLEAN_CONTENT` | `all` (default) · `posts` · `reels` | tutto · solo foto e caroselli · solo video/reel |
+| `INSTACLEAN_SESSION_MAX_DAYS` | `14` (default), `0` = mai | dopo N giorni dal login il profilo viene cancellato (logout locale) e si rifà il login |
+| `INSTACLEAN_WIPE_PROFILE_AFTER_RUN` | `false` (default) | `true`: profilo cancellato dopo ogni giro (login ogni volta, niente esecuzione pianificata) |
+
+Comandi: `--login` (finestra visibile, login a mano, poi si chiude) e
+`--logout` (cancella subito il profilo). Il salvataggio password e
+l'autocompilazione sono disattivati nel profilo: la password non finisce mai su disco.
+
+Testato sul tuo account il 2026-10-19: tutte e tre le modalità finestra e il
+filtro `posts` funzionano in dry run. Con `posts` la raccolta di un batch è più
+lenta (~55 s invece di ~13 s) perché la maggior parte dei tuoi Like sono reel.
+
 ## Esecuzione pianificata (opzionale)
 
 Dopo aver completato tutti gli stage puoi far girare una sessione normale al
 giorno senza digitare `UNLIKE`:
 
-1. in `.env`: `INSTACLEAN_ALLOW_UNATTENDED=true`
+1. in `.env`: `INSTACLEAN_ALLOW_UNATTENDED=true` (l'interruttore; `false` lo spegne)
 2. comando: `.venv/bin/python -m instaclean --real --unattended`
 
 Vale solo per sessioni normali (niente `--limit`). Pausa di 12 h, cooldown di
-72 h dopo un blocco, stop e recovery restano invariati. Per spegnere la
-modalità: rimetti `false` nel `.env`.
+72 h dopo un blocco, stop e recovery restano invariati.
+
+Durante l'esecuzione (~7–15 minuti al giorno) servono: Mac acceso e **non in
+stop** (lo schermo può essere bloccato), il tuo utente macOS connesso, la
+connessione internet di sempre, e lo scheduler attivo (per i task di Claude:
+app aperta; se era chiusa, il task parte alla riapertura).
+
+## Buone pratiche
+
+- Stesso Mac, stessa rete. **Niente VPN, proxy, Tor o cambi di hotspot**: un IP o
+  un paese nuovo sembra un furto d'account e può far scattare una verifica d'identità.
+- Un solo dispositivo alla volta; non togliere Like in massa a mano mentre gira.
+- 2FA attiva; login solo dalla finestra di Instaclean (`--login`).
+- Nessun'altra automazione sullo stesso account.
+- Tieni i default (500/giorno, pausa 12 h) o scendi; dopo un avviso scendi a 200–300.
+- Se un giro si ferma, leggi il motivo prima di rilanciare (`--status`, `logs/`).
+- Non cambiare la lingua dell'account durante la pulizia.
+- Lascia scadere il login (14 giorni) e controlla ogni tanto *Dove hai effettuato l'accesso*.
+- A fine lavoro: `--logout`, logout della sessione su Instagram, cancella `checkpoints/ logs/ debug/`.

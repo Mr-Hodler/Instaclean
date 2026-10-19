@@ -128,3 +128,75 @@ def test_unattended_requires_explicit_opt_in(tmp_path):
     assert unattended_refusal(allowed, argparse.Namespace(real=True, limit=3))
     dry = Config(profile_dir=tmp_path / "p", allow_unattended=True)
     assert unattended_refusal(dry, ok)
+
+
+def test_content_kind_and_scope():
+    from instaclean.selectors import content_kind, wanted
+    assert content_kind("Photo, 1 of 18, by @x") == "post"
+    assert content_kind("Carousel with 15 items, 7 of 18, by @x") == "post"
+    assert content_kind("Carosello con 3 elementi, 2 di 5") == "post"
+    assert content_kind("Video, 2 of 18, by @x") == "reel"
+    assert content_kind("") == "unknown" and content_kind("Something") == "unknown"
+    assert wanted("unknown", "all") and not wanted("unknown", "posts")
+    assert wanted("post", "posts") and not wanted("reel", "posts")
+    assert wanted("reel", "reels") and not wanted("post", "reels")
+
+
+def test_new_options_validated(tmp_path):
+    for kw in ({"browser_mode": "invisible"}, {"content": "stories"}, {"session_max_days": -1}):
+        with pytest.raises(ValueError):
+            Config(profile_dir=tmp_path / "p", **kw).validate()
+    c = load_config(env_file=None, environ={"INSTACLEAN_BROWSER": "Headless",
+                                            "INSTACLEAN_CONTENT": "posts",
+                                            "INSTACLEAN_SESSION_MAX_DAYS": "0"},
+                    profile_dir=tmp_path / "p")
+    assert (c.browser_mode, c.content, c.session_max_days) == ("headless", "posts", 0)
+    assert Config().session_max_days == 14 and Config().browser_mode == "visible"
+
+
+def test_login_expiry_wipes_only_the_profile(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    import instaclean.browser as br
+    home = tmp_path / "home"
+    profile = home / ".instaclean" / "browser-profile"
+    (profile / "Default").mkdir(parents=True)
+    (profile / "Default" / "Cookies").write_text("x")
+    outside = tmp_path / "keep.txt"
+    outside.write_text("keep")
+    (profile / "link").symlink_to(outside)  # must be removed, not followed
+    monkeypatch.setattr(br, "check_profile_dir", lambda p, r, h=None: None)
+    cfg = Config(profile_dir=profile, session_max_days=14)
+    assert br.expire_login_if_needed(cfg) is False  # no login recorded yet
+    br.record_login(profile)
+    assert br.expire_login_if_needed(cfg) is False  # fresh
+    later = datetime.now(timezone.utc) + timedelta(days=15)
+    assert br.expire_login_if_needed(cfg, now=later) is True
+    assert not profile.exists() and outside.read_text() == "keep"
+    assert br.expire_login_if_needed(Config(profile_dir=profile, session_max_days=0),
+                                     now=later) is False
+
+
+def test_wipe_refuses_personal_folders(tmp_path):
+    import instaclean.browser as br
+    home = tmp_path / "home"
+    chrome = home / "Library/Application Support/Google/Chrome"
+    chrome.mkdir(parents=True)
+    with pytest.raises(ValueError):
+        br.wipe_profile(chrome, home=home)
+    assert chrome.exists()
+
+
+def test_profile_hardening_disables_password_saving(tmp_path):
+    import json
+
+    import instaclean.browser as br
+    prof = tmp_path / "p"
+    (prof / "Default").mkdir(parents=True)
+    (prof / "Default" / "Preferences").write_text(json.dumps({"keep": 1, "profile": {"x": 2}}))
+    br.harden_profile(prof)
+    prefs = json.loads((prof / "Default" / "Preferences").read_text())
+    assert prefs["credentials_enable_service"] is False
+    assert prefs["profile"]["password_manager_enabled"] is False and prefs["profile"]["x"] == 2
+    assert prefs["autofill"]["profile_enabled"] is False and prefs["keep"] == 1

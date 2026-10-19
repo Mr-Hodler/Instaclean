@@ -64,6 +64,31 @@ SETTINGS_RE = _exact(
     "Settings", "Impostazioni", "Configuración", "Paramètres", "Einstellungen", "Configurações"
 )
 
+# Tiles carry an aria-label like "Photo, 3 of 18, by ..." / "Carousel with 5
+# items, ..." / "Video, ...". Only the part before the first comma is read
+# (never the author). Videos on the Likes page are reels.
+_POST_KIND_RE = re.compile(
+    r"^(photo|foto|image|immagine|imagen|bild|carousel|carosello|carrusel|carrousel|karussell)", re.I)
+_REEL_KIND_RE = re.compile(r"^(video|vídeo|vidéo|reel|clip)", re.I)
+
+
+def content_kind(label: str) -> str:
+    """'post', 'reel' or 'unknown' from the first segment of a tile label."""
+    head = (label or "").split(",")[0].strip()
+    if _POST_KIND_RE.match(head):
+        return "post"
+    if _REEL_KIND_RE.match(head):
+        return "reel"
+    return "unknown"
+
+
+def wanted(kind: str, content: str) -> bool:
+    """Whether a tile of this kind is in scope. Unknown kinds only for 'all'."""
+    if content == "all":
+        return True
+    return kind == {"posts": "post", "reels": "reel"}[content]
+
+
 _FP_RE = re.compile(r"^[\w.\-]{6,200}$")
 
 

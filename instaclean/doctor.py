@@ -91,6 +91,18 @@ def collect(cfg: Config, store: CheckpointStore) -> list[tuple[str, str, str]]:
     add(OK, "mode", "DRY RUN" if cfg.dry_run else "REAL allowed with --real")
     add(OK, "limits", f"batch {cfg.batch_min}-{cfg.batch_max}, session {cfg.max_actions_per_session}, "
         f"pause {cfg.min_hours_between_sessions}h, after block {cfg.block_cooldown_hours}h")
+    add(OK, "browser", f"{cfg.browser_mode}, content {cfg.content}, "
+        f"unattended {'allowed' if cfg.allow_unattended else 'off'}")
+    from .browser import login_age_days
+    age = login_age_days(cfg.profile_dir)
+    if cfg.session_max_days == 0:
+        add(WARN, "login expiry", "off (INSTACLEAN_SESSION_MAX_DAYS=0)")
+    elif age is None:
+        add(OK, "login expiry", f"{cfg.session_max_days} days (no login recorded yet)")
+    else:
+        left = cfg.session_max_days - age
+        add(OK if left > 1 else WARN, "login expiry",
+            f"login {age:.1f} days old, expires in {max(left, 0):.1f} days")
 
     gi = REPO_ROOT / ".gitignore"
     lines = gi.read_text(encoding="utf-8").splitlines() if gi.exists() else []

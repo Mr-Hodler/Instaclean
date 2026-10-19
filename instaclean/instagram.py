@@ -71,7 +71,7 @@ _DISCOVER_JS = """
   };
   const items = boxes.map((b, i) => {
     b.setAttribute(args.attr, String(i));
-    let node = b, src = '';
+    let node = b, src = '', tile = null;
     for (let d = 0; d < 10 && node && !src; d++) {
       node = node.parentElement;
       if (!node) break;
@@ -80,11 +80,20 @@ _DISCOVER_JS = """
         const r = im.getBoundingClientRect();
         return r.width >= args.minPx && r.height >= args.minPx;
       });
-      if (imgs.length === 1) src = imgs[0].currentSrc || imgs[0].src || '';
+      if (imgs.length === 1) { src = imgs[0].currentSrc || imgs[0].src || ''; tile = node; }
       else if (imgs.length > 1) break;
     }
+    let kind = '';
+    if (tile) {
+      const cands = [tile, ...tile.querySelectorAll('[aria-label]')];
+      for (const c of cands) {
+        if (b.contains(c) || c === b) continue;
+        const l = c.getAttribute('aria-label');
+        if (l && l.includes(',')) { kind = l.split(',')[0].slice(0, 40); break; }
+      }
+    }
     const r = b.getBoundingClientRect();
-    return { idx: i, src, state: stateOf(b), token: token(b), visible: r.width > 0 && r.height > 0 };
+    return { idx: i, src, kind, state: stateOf(b), token: token(b), visible: r.width > 0 && r.height > 0 };
   });
   return { selector: used, items };
 }
@@ -146,6 +155,7 @@ class _Item:
     fp: str
     state: bool | None
     token: str
+    kind: str = "unknown"
 
 
 class InstagramLikesUI:
@@ -160,7 +170,13 @@ class InstagramLikesUI:
         login_wait_s: float = LOGIN_WAIT_S,
         settle_range: tuple[float, float] = (0.3, 1.0),
         notify: Callable[[str], None] = print,
+        content: str = "all",
+        interactive_login: bool = True,
+        on_logged_in: Callable[[], None] | None = None,
     ) -> None:
+        self.content = content
+        self.interactive_login = interactive_login
+        self.on_logged_in = on_logged_in
         self.page = page
         self.rng = rng
         self.origin = origin.rstrip("/")
@@ -280,7 +296,7 @@ class InstagramLikesUI:
             return False
         return any(self.page.locator(m).count() > 0 for m in S.LOGGED_IN_MARKERS)
 
-    def _ensure_logged_in(self) -> None:
+    def ensure_logged_in(self) -> None:
         self._goto(self.origin + "/")
         deadline = time.monotonic() + self.login_wait_s
         announced = False
@@ -288,9 +304,15 @@ class InstagramLikesUI:
             self._alive()
             try:
                 if self._is_logged_in():
+                    if self.on_logged_in:
+                        self.on_logged_in()
                     return
             except PlaywrightError:
                 pass  # page navigating while the user logs in
+            if not self.interactive_login:
+                raise StopCondition(StopReason.LOGIN_REQUIRED,
+                                    "not logged in and no visible window to log in: "
+                                    "run `python -m instaclean --login` once")
             if not announced:
                 self.notify("Log in to Instagram in the browser window (including 2FA if asked). "
                             f"Waiting up to {int(self.login_wait_s // 60)} minutes...")
@@ -366,7 +388,7 @@ class InstagramLikesUI:
         self._settle()
 
     def ensure_ready(self) -> None:
-        self._ensure_logged_in()
+        self.ensure_logged_in()
         self.check_safety()
         self._navigate_to_likes()
         self._wait_likes_page_loaded()
@@ -403,7 +425,8 @@ class InstagramLikesUI:
         items: list[_Item] = []
         for raw in res["items"]:
             fp = S.fingerprint_from_src(raw["src"]) if raw["visible"] else ""
-            items.append(_Item(idx=raw["idx"], fp=fp, state=raw["state"], token=raw["token"]))
+            items.append(_Item(idx=raw["idx"], fp=fp, state=raw["state"], token=raw["token"],
+                               kind=S.content_kind(raw.get("kind", ""))))
         return items
 
     def _is_selected(self, item: _Item) -> bool:
@@ -470,7 +493,7 @@ class InstagramLikesUI:
                 items = self._read_items()
                 fps: list[str] = []
                 for it in items:
-                    if it.fp:
+                    if it.fp and S.wanted(it.kind, self.content):
                         fps.append(it.fp)
                         self._baseline.setdefault(it.fp, it.token)
                 if len(fps) >= target:
@@ -479,7 +502,8 @@ class InstagramLikesUI:
                 if stalls >= MAX_LOAD_STALLS:
                     skipped = len(items) - len(fps)
                     if skipped:
-                        log.warning("%d tiles without a recognizable thumbnail were skipped", skipped)
+                        log.info("%d tiles out of scope or unrecognized (content=%s) were skipped",
+                                 skipped, self.content)
                     # A visible loading indicator means the list is NOT finished.
                     more = self._spinner_visible()
                     if more:

@@ -127,13 +127,15 @@ tool di automazione può comunque comportare restrizioni sull'account.
 |---|---|
 | Dipendenza compromessa | 1 dipendenza runtime + 3 transitive, versioni esatte e hash SHA-256, `--require-hashes`, `pip-audit` |
 | Secret finiti su GitHub (repo **pubblico**) | profilo fuori dal repo, `.gitignore` testato, scansione della storia Git prima di ogni push, autore dei commit con email `noreply` di GitHub |
-| Furto della sessione dal disco | profilo `0700`, checkpoint `0600`; con mock keychain chi legge la cartella ha la sessione → cancellarla a fine lavoro |
+| Furto della sessione dal disco | profilo `0700`, checkpoint `0600`; con mock keychain chi legge la cartella ha la sessione → **scadenza del login dopo 14 giorni** (profilo cancellato, `INSTACLEAN_SESSION_MAX_DAYS`), opzione di cancellazione dopo ogni giro, `--logout` |
+| Password salvata su disco | salvataggio password e autocompilazione disattivati nel profilo prima di ogni avvio |
+| Modalità headless | non mascherata: Instagram vede `HeadlessChrome`; senza login valido si ferma (`login_required`) invece di attendere |
 | Uso del profilo personale del browser | percorsi in `~/Library/Application Support`, Keychains, `~/.ssh`… rifiutati |
 | Contenuto della pagina che pilota il codice | DOM letto solo da JS fisso; identità validate con regex e salvate solo come hash; tag di click scritti da Instaclean e azzerati a ogni scansione; strict mode di Playwright rifiuta click ambigui |
 | Navigazione fuori da Instagram | host diverso da `instagram.com` = stop; download disabilitati |
 | Esfiltrazione / telemetria | nessuna rete propria; driver Playwright ispezionato; test con rete bloccata |
 | Regressioni future del codice | `tests/test_security_static.py` blocca `subprocess`, `socket`, `requests`, `eval`, `exec`, `os.system`, accesso a cookie, endpoint interni |
-| Restrizioni dell'account | non eliminabili: limiti per sessione, pausa 12 h, cooldown 72 h dopo un segnale, stop immediato, nessun retry distruttivo |
+| Restrizioni dell'account | non eliminabili (vedi *Buone pratiche* nel README): limiti per sessione, pausa 12 h, cooldown 72 h dopo un segnale, stop immediato, nessun retry distruttivo |
 
 ## 9. Checklist di regression audit (fine progetto)
 

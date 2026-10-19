@@ -161,3 +161,30 @@ def test_real_batch_works_on_loaded_items_when_list_stalls(make_page, cfg, store
                       store, random.Random(9)).run(confirm=YES)
     assert s.batches and s.batches[0]["size"] == 12
     assert s.batches[0]["successful"] == 12 and s.failed == 0
+
+
+def test_posts_only_skips_reels(make_page, cfg, store):
+    unlock(store, "dry_run", "real_test", "manual_verified")
+    fake = FakeInstagram(30)  # every 3rd tile is a Photo, the rest are Video (reels)
+    photos = {fp for i, fp in enumerate(fake.liked) if i % 3 == 0}
+    ui = InstagramLikesUI(make_page(fake), random.Random(7), login_wait_s=5,
+                          settle_range=(0.0, 0.05), notify=lambda _m: None, content="posts")
+    s = SessionRunner(ui, replace(real(cfg), batch_min=5, batch_max=5,
+                                  post_unlike_grace_seconds=0, verify_recheck_seconds=0),
+                      store, random.Random(8)).run(limit=5, confirm=YES)
+    assert s.successful == 5 and s.failed == 0
+    removed = photos - set(fake.liked)
+    assert len(removed) == 5
+    assert all(fp in fake.liked for i, fp in enumerate(FakeInstagram(30).liked) if i % 3)  # no reel touched
+
+
+def test_headless_style_run_stops_when_logged_out(make_page):
+    fake = FakeInstagram(5, logged_in=False)
+    ui = InstagramLikesUI(make_page(fake), random.Random(1), login_wait_s=60,
+                          notify=lambda _m: None, interactive_login=False)
+    import time
+    t0 = time.monotonic()
+    with pytest.raises(StopCondition) as e:
+        ui.ensure_ready()
+    assert e.value.reason is StopReason.LOGIN_REQUIRED
+    assert time.monotonic() - t0 < 30  # does not wait for a login nobody can do

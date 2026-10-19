@@ -27,6 +27,14 @@ BLOCK_COOLDOWN_HOURS = 72.0
 POST_UNLIKE_GRACE_SECONDS = 5.0
 VERIFY_RECHECK_SECONDS = 45.0
 VERIFY_RECHECKS = 2
+# visible | background (minimized window) | headless (no window)
+BROWSER_MODE = "visible"
+# all | posts (photos and carousels) | reels (videos)
+CONTENT = "all"
+# Local logout: wipe the browser profile when the login is older than this
+# (days, 0 = never) or after every run.
+SESSION_MAX_DAYS = 14
+WIPE_PROFILE_AFTER_RUN = False
 
 # Hard cap enforced in code: no configuration can raise a batch above this.
 HARD_BATCH_CAP = 100
@@ -63,6 +71,10 @@ class Config:
     verify_recheck_seconds: float = VERIFY_RECHECK_SECONDS
     verify_rechecks: int = VERIFY_RECHECKS
     allow_unattended: bool = False
+    browser_mode: str = BROWSER_MODE
+    content: str = CONTENT
+    session_max_days: int = SESSION_MAX_DAYS
+    wipe_profile_after_run: bool = WIPE_PROFILE_AFTER_RUN
     profile_dir: Path = field(default_factory=lambda: DEFAULT_PROFILE_DIR.expanduser())
     data_dir: Path = REPO_ROOT
 
@@ -92,6 +104,12 @@ class Config:
         if self.verify_rechecks < 0 or self.verify_recheck_seconds < 0 \
                 or self.post_unlike_grace_seconds < 0:
             raise ValueError("verification timings must be >= 0")
+        if self.browser_mode not in ("visible", "background", "headless"):
+            raise ValueError("INSTACLEAN_BROWSER must be visible, background or headless")
+        if self.content not in ("all", "posts", "reels"):
+            raise ValueError("INSTACLEAN_CONTENT must be all, posts or reels")
+        if self.session_max_days < 0:
+            raise ValueError("INSTACLEAN_SESSION_MAX_DAYS must be >= 0")
         check_profile_dir(self.profile_dir, REPO_ROOT)
         return self
 
@@ -151,6 +169,10 @@ _ENV_KEYS = {
     "INSTACLEAN_VERIFY_RECHECK_SECONDS": ("verify_recheck_seconds", float),
     "INSTACLEAN_VERIFY_RECHECKS": ("verify_rechecks", int),
     "INSTACLEAN_ALLOW_UNATTENDED": ("allow_unattended", parse_bool),
+    "INSTACLEAN_BROWSER": ("browser_mode", lambda v: v.strip().lower()),
+    "INSTACLEAN_CONTENT": ("content", lambda v: v.strip().lower()),
+    "INSTACLEAN_SESSION_MAX_DAYS": ("session_max_days", int),
+    "INSTACLEAN_WIPE_PROFILE_AFTER_RUN": ("wipe_profile_after_run", parse_bool),
     "INSTACLEAN_PROFILE_DIR": ("profile_dir", lambda v: Path(v).expanduser()),
 }
 

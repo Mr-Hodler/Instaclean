@@ -31,8 +31,11 @@ before doing anything else. If something looks wrong, it stops.
 - [How it works](#how-it-works)
 - [Install](#install)
 - [The safe path: five steps](#the-safe-path-five-steps)
+- [Options: window, posts or reels, login lifetime](#options)
+- [Running it every day on its own](#running-it-every-day)
 - [How long does it take? (e.g. 30,000 likes)](#how-long-does-it-take)
 - [Account safety: what Instaclean does about blocks](#account-safety)
+- [Best practices](#best-practices)
 - [Security model](#security-model)
 - [Configuration](#configuration)
 - [Commands](#commands)
@@ -225,6 +228,88 @@ in `.env` **and** `--real` on the command line. Either one alone gives you a dry
 
 ---
 
+## Options
+
+### Browser window
+
+| `INSTACLEAN_BROWSER` | What you see | Notes |
+|---|---|---|
+| `visible` (default) | a normal Chromium window | needed for the very first login and for the 5 setup steps |
+| `background` | the window is minimized right after start | you can restore it from the Dock at any time; same browser as `visible` |
+| `headless` | no window at all | Instagram can see the browser is headless (`HeadlessChrome`): nothing is disguised, so it may treat it more strictly. If the login has expired, a headless run stops with `login_required` instead of waiting |
+
+Tested on a real account (2026-10-19): `visible`, `background` and `headless` all
+loaded, selected and verified a full batch in dry run.
+
+### Posts or reels
+
+| `INSTACLEAN_CONTENT` | Removes likes on |
+|---|---|
+| `all` (default) | everything on the Likes page |
+| `posts` | photos and carousels only |
+| `reels` | videos (reels) only |
+
+The type comes from the label Instagram puts on each tile ("Photo", "Carousel…",
+"Video"). Only the part before the first comma is read, so the author is never read or stored.
+Tiles whose type isn't recognised are skipped unless the setting is `all`.
+`posts` is slower at the start of each batch when most of your likes are reels: it has to
+scroll further to collect 80–100 posts (measured: ~55 s instead of ~13 s).
+
+### Login lifetime (local logout)
+
+| Setting | Default | Effect |
+|---|---|---|
+| `INSTACLEAN_SESSION_MAX_DAYS` | `14` | when the login on this Mac is older than this, the dedicated profile is wiped before the next run and you log in again (`0` = never expire) |
+| `INSTACLEAN_WIPE_PROFILE_AFTER_RUN` | `false` | wipe the profile after **every** run: nothing stays on disk, but you log in every time, so it can't be used for unattended runs |
+
+```bash
+.venv/bin/python -m instaclean --login    # visible window: log in by hand (2FA too), then it closes
+.venv/bin/python -m instaclean --logout   # wipe the profile now
+```
+
+Wiping the profile logs **this Mac** out. To end the session on Instagram's side as well,
+use *Settings → Accounts Center → Password and security → Where you're logged in*.
+Password saving and autofill are switched off in the profile, so your password is never
+written to disk, even when you log in by hand.
+
+---
+
+## Running it every day
+
+After the five setup steps, one normal session per day can run without you typing `UNLIKE`:
+
+1. In `.env`: `INSTACLEAN_ALLOW_UNATTENDED=true` (this is the switch; `false` turns it off).
+2. Command: `.venv/bin/python -m instaclean --real --unattended`
+3. Schedule it with anything that runs a command daily. With the Claude desktop app, a scheduled
+   task can run it, read the result and tell you if it stopped.
+
+```mermaid
+flowchart LR
+    T([Daily trigger]) --> C{INSTACLEAN_ALLOW_UNATTENDED?}
+    C -->|false| X1([Refused])
+    C -->|true| G{All stages done?<br/>12 h pause / 72 h cooldown over?}
+    G -->|no| X2([Refused, nothing opened])
+    G -->|yes| E{Login older than<br/>SESSION_MAX_DAYS?}
+    E -->|yes| W[Wipe profile] --> L([login_required: run --login])
+    E -->|no| S[Session: up to 500, verified batches]
+    S --> R([Summary + exit code])
+```
+
+**What the Mac needs while it runs (~7–15 min a day):**
+
+| | Needed? |
+|---|---|
+| Mac switched on and **not asleep** | yes. A sleeping Mac runs nothing; use `caffeinate -i` around the command to stop idle sleep during the run |
+| You logged in to macOS | yes (the browser runs in your user session). The screen can be locked |
+| Internet | yes, your usual connection |
+| The scheduler running | yes. The Claude app's scheduled tasks need the app open; if it was closed, the task runs when the app opens again |
+| A visible window | no, with `background` or `headless` |
+
+Unattended runs never use `--limit`, never skip the stages, pauses or cooldowns, and stop
+exactly like attended ones.
+
+---
+
 ## How long does it take?
 
 **Short answer for 30,000 likes: about 60 sessions of 500, so roughly one to two months on
@@ -237,8 +322,8 @@ pacing between sessions, not how fast the clicks are.
 |---|---|---|
 | Likes per session | 500 (default cap) | `INSTACLEAN_MAX_ACTIONS_PER_SESSION` |
 | Batches per session | ~6 | 80–100 each |
-| Time per batch | ~1.5–2.5 min | measured on a real account (dry run, 2026-10-18): loading 99 likes ≈ 13 s, ticking 93 checkboxes ≈ 29 s; confirm + reload + verification estimated |
-| Time per session (estimate) | ~10–15 min | |
+| Time per batch | ~1–2.5 min | measured on a real account (dry run, 2026-10-18): loading 99 likes ≈ 13 s, ticking 93 checkboxes ≈ 29 s; confirm + reload + verification estimated |
+| Time per session | ~7–15 min | measured 2026-10-19: 500 verified unlikes in 7 min (`all`); `posts` takes longer |
 | Minimum pause between sessions | 12 h | enforced; `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` |
 | Pause after any block signal | 72 h | enforced; `INSTACLEAN_BLOCK_COOLDOWN_HOURS` |
 
@@ -291,7 +376,7 @@ to every warning:
 | **Long cooldown after a warning** | Real mode is refused for 72 h after any of the above |
 | **No retries of destructive actions** | An uncertain unlike is checked later; it is never clicked again automatically |
 | **One session at a time** | One dedicated profile; Chromium refuses a second instance on it |
-| **Visible browser** | Every action happens in front of you; you can close the window at any moment (`browser_disconnected` → stop) |
+| **Visible by default** | Every action happens in a window you can watch or close (`browser_disconnected` → stop). `background`/`headless` are opt-in |
 | **Normal UI only** | The same bulk "Select → Unlike" that Instagram offers to every user |
 
 **If Instagram shows a warning:**
@@ -300,8 +385,30 @@ to every warning:
 3. Wait at least the cooldown (72 h). Waiting longer is better.
 4. Start again with a smaller `INSTACLEAN_MAX_ACTIONS_PER_SESSION`, for example 200.
 
-**Also on your side:** keep 2FA on, don't run other automation on the same account,
-and don't use Instaclean on accounts that aren't yours.
+---
+
+## Best practices
+
+These keep your account's normal patterns stable, so Instagram's security checks
+are less likely to trigger. None of them hides that a tool is in use.
+
+- **Same Mac, same network.** Run from your usual Wi-Fi. **No VPN, proxy, Tor or hotspot
+  switching**: a sudden new IP or country looks like an account takeover and can force an
+  identity check.
+- **One device, one session.** Don't run Instaclean on two computers, and don't bulk-unlike by
+  hand in the app while it runs.
+- **Keep 2FA on**, and log in only through the Instaclean window (`--login`), never by
+  pasting cookies or tokens anywhere.
+- **Don't run other automation** on the same account (follow/unfollow tools, schedulers, bots).
+- **Keep the defaults or go lower:** 500 per day, 12 h pause. If you ever see a warning, go
+  down to 200–300.
+- **Don't stack sessions.** If a run stops, read why before running again (`--status`, `logs/`).
+- **Leave the account language alone** during the weeks of cleanup: the stop detection reads
+  English, Italian, Spanish, French, German, Portuguese and Dutch.
+- **Let the login expire** (14 days by default) and look at
+  *Where you're logged in* on Instagram from time to time.
+- **When you're done:** `--logout`, log the session out on Instagram, delete `checkpoints/ logs/ debug/`.
+- Only use it on **your own** account.
 
 ---
 
@@ -333,7 +440,8 @@ flowchart TB
 |---|---|
 | Malicious or compromised dependency | One runtime dependency (Microsoft Playwright) and its 3 sub-deps, pinned with hashes; installed with `--require-hashes`; `pip-audit` clean on 2026-10-18 |
 | Secrets committed to Git | Profile lives **outside** the repo; `.gitignore` covers `.env`, logs, checkpoints, debug, profiles, HAR/trace files; a test checks the ignore rules |
-| Session theft from disk | Profile `0700`, checkpoints `0600`, logs dir `0700`. Note: Playwright's Chromium uses a mock keychain, so anyone who can read the profile folder has your session. Delete it when finished |
+| Session theft from disk | Profile `0700`, checkpoints `0600`, logs dir `0700`. Playwright's Chromium uses a mock keychain, so anyone who can read the profile folder has your session: the login therefore **expires after 14 days** (profile wiped), or after every run if you choose; `--logout` wipes it at once |
+| Password left on disk | Password saving and autofill are disabled in the profile before every launch |
 | Using your personal browser | Refused: profile paths inside `~/Library/Application Support`, `~/.ssh`, Keychains… are rejected |
 | Page content steering the code | DOM is read by fixed scripts; identities must match `^[\w.\-]{6,200}$`; click targets are tagged by Instaclean and stale tags are wiped on each scan; Playwright strict mode refuses ambiguous clicks |
 | Navigation to another site | Any host other than `instagram.com` is a stop condition; downloads are disabled |
@@ -365,6 +473,10 @@ Copy `.env.example` to `.env` (gitignored). **Never put a password, cookie or to
 | `INSTACLEAN_BLOCK_COOLDOWN_HOURS` | `72` | enforced pause after any block/limit/CAPTCHA/identity stop |
 | `INSTACLEAN_VERIFY_RECHECK_SECONDS` / `INSTACLEAN_VERIFY_RECHECKS` | `45` / `2` | Instagram applies bulk unlikes asynchronously: items still listed after the reload are re-checked (read-only) this many times before counting as failed |
 | `INSTACLEAN_ALLOW_UNATTENDED` | `false` | allows `--real --unattended` (no UNLIKE prompt) for scheduled **normal** sessions only, after all stages; pauses, cooldowns and stops still apply |
+| `INSTACLEAN_BROWSER` | `visible` | `visible`, `background` (minimized) or `headless` (no window) — see [Options](#options) |
+| `INSTACLEAN_CONTENT` | `all` | `all`, `posts` (photos + carousels) or `reels` (videos) |
+| `INSTACLEAN_SESSION_MAX_DAYS` | `14` | wipe the profile (local logout) when the login is older; `0` = never |
+| `INSTACLEAN_WIPE_PROFILE_AFTER_RUN` | `false` | wipe the profile after every run |
 | `INSTACLEAN_DEBUG` | `false` | save screenshots + HTML to `debug/` (may show thumbnails of liked posts) |
 | `INSTACLEAN_PROFILE_DIR` | `~/.instaclean/browser-profile` | dedicated Chromium profile |
 
@@ -382,6 +494,8 @@ is **not** meant to evade detection and it will not.
 .venv/bin/python -m instaclean --real --limit 20   # first small batch
 .venv/bin/python -m instaclean --real              # normal session
 .venv/bin/python -m instaclean --real --unattended # scheduled normal session (opt-in in .env)
+.venv/bin/python -m instaclean --login             # log in by hand in a visible window
+.venv/bin/python -m instaclean --logout            # wipe the profile (local logout)
 .venv/bin/python -m instaclean --status            # stages, last session, cooldowns
 .venv/bin/python -m instaclean --doctor            # environment check
 .venv/bin/python -m instaclean --debug ...         # + screenshots/HTML on stop
@@ -410,6 +524,7 @@ is **not** meant to evade detection and it will not.
 | `uncertain_result` | Run again: the next run only **checks** the batch, it doesn't click |
 | `action_blocked`, `rate_limit`, `captcha`, `identity_verification`, `security_warning` | See [Account safety](#account-safety). Wait, don't retry |
 | `empty_unconfirmed` | No likes visible. Confirm by hand / with the data export |
+| `login_required` (headless/unattended) | The login expired or was wiped: run `--login` once, then the next scheduled run works again |
 | Login window keeps reappearing | Log in again in the Instaclean window; the session is stored only in its profile |
 
 ---
@@ -424,8 +539,8 @@ is **not** meant to evade detection and it will not.
 
 | Kind | What is covered |
 |---|---|
-| **Automated** | batch range 80–100, hard cap 100, session limit, fewer than 80 left, empty list, dry run, stage gate, real-mode confirmation, selection mismatch, verification failure, uncertain results, every stop condition, cooldowns, checkpoints (atomic, 0600, no personal data, corruption), crash recovery, `--doctor`, static security scan, `.gitignore` coverage |
-| **Automated, mock DOM** | The real Playwright layer driven against a local imitation of the Likes page (network blocked): menu navigation, infinite scroll, select, unlike, verification, Action Blocked + recovery, CAPTCHA frame, closed browser |
+| **Automated** | batch range 80–100, hard cap 100, session limit, fewer than 80 left, empty list, dry run, stage gate, real-mode confirmation, selection mismatch, verification failure, uncertain results, every stop condition, cooldowns, checkpoints (atomic, 0600, no personal data, corruption), crash recovery, `--doctor`, static security scan, `.gitignore` coverage, unattended opt-in, content type detection, login expiry and safe profile wipe (no symlink following, personal folders refused), password-saving disabled |
+| **Automated, mock DOM** | The real Playwright layer driven against a local imitation of the Likes page (network blocked): menu navigation, infinite scroll, select, unlike, verification, Action Blocked + recovery, CAPTCHA frame, closed browser, posts-only filtering, no waiting for a login when there is no window |
 | **Manual (required)** | Anything about the real instagram.com: the five steps above |
 
 The mock DOM shows the code works. It **does not** show that the selectors match
@@ -453,7 +568,9 @@ docs/         ARCHITECTURE.md · SECURITY.md · GUIDA-IT.md
   results `uncertain` (stop).
 - Old likes that the web page does not show cannot be removed with Instaclean.
 - Stop detection reads URLs, frames and visible text. A warning in a new format might be missed;
-  that is why the browser always stays visible.
+  that is why `visible` is the default and every run is logged.
+- On the Likes page "Video" is treated as a reel. A plain (non-reel) video post counts as a reel too.
+- `headless` is not disguised: Instagram may handle it more strictly than a normal window.
 
 ## License
 
