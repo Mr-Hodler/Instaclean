@@ -364,6 +364,7 @@ Copy `.env.example` to `.env` (gitignored). **Never put a password, cookie or to
 | `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` | `12` | enforced pause after a full-size real session |
 | `INSTACLEAN_BLOCK_COOLDOWN_HOURS` | `72` | enforced pause after any block/limit/CAPTCHA/identity stop |
 | `INSTACLEAN_VERIFY_RECHECK_SECONDS` / `INSTACLEAN_VERIFY_RECHECKS` | `45` / `2` | Instagram applies bulk unlikes asynchronously: items still listed after the reload are re-checked (read-only) this many times before counting as failed |
+| `INSTACLEAN_ALLOW_UNATTENDED` | `false` | allows `--real --unattended` (no UNLIKE prompt) for scheduled **normal** sessions only, after all stages; pauses, cooldowns and stops still apply |
 | `INSTACLEAN_DEBUG` | `false` | save screenshots + HTML to `debug/` (may show thumbnails of liked posts) |
 | `INSTACLEAN_PROFILE_DIR` | `~/.instaclean/browser-profile` | dedicated Chromium profile |
 
@@ -380,6 +381,7 @@ is **not** meant to evade detection and it will not.
 .venv/bin/python -m instaclean --mark-verified     # after checking by hand
 .venv/bin/python -m instaclean --real --limit 20   # first small batch
 .venv/bin/python -m instaclean --real              # normal session
+.venv/bin/python -m instaclean --real --unattended # scheduled normal session (opt-in in .env)
 .venv/bin/python -m instaclean --status            # stages, last session, cooldowns
 .venv/bin/python -m instaclean --doctor            # environment check
 .venv/bin/python -m instaclean --debug ...         # + screenshots/HTML on stop

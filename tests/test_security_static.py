@@ -67,3 +67,13 @@ def test_env_example_is_tracked_and_has_no_secrets():
     text = (ROOT / ".env.example").read_text().lower()
     for word in ("password=", "cookie=", "token=", "sessionid", "username="):
         assert word not in text
+
+
+def test_tests_never_call_main_entry_point():
+    """main() writes to the real checkpoints/logs: tests must use tmp stores."""
+    for path in (ROOT / "tests").glob("test_*.py"):
+        if path.name == "test_security_static.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert "from instaclean.main import main" not in text, path.name
+        assert "main([" not in text, path.name

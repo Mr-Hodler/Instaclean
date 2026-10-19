@@ -250,3 +250,15 @@ browser o file personali; nessun `sudo`. Dettagli in [SECURITY.md](SECURITY.md).
 - Il rilevamento degli stop si basa su URL, frame e testo visibile: un blocco
   presentato in modo nuovo potrebbe non essere riconosciuto. Il browser è sempre
   visibile proprio per questo.
+
+## Esecuzione pianificata (opzionale)
+
+Dopo aver completato tutti gli stage puoi far girare una sessione normale al
+giorno senza digitare `UNLIKE`:
+
+1. in `.env`: `INSTACLEAN_ALLOW_UNATTENDED=true`
+2. comando: `.venv/bin/python -m instaclean --real --unattended`
+
+Vale solo per sessioni normali (niente `--limit`). Pausa di 12 h, cooldown di
+72 h dopo un blocco, stop e recovery restano invariati. Per spegnere la
+modalità: rimetti `false` nel `.env`.

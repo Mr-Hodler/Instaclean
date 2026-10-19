@@ -1,4 +1,9 @@
-"""Shared fakes. No network, no browser."""
+"""Shared fakes. No network, no browser.
+
+Tests must never call instaclean.main.main(): it uses the REAL repo folders
+(checkpoints/, logs/) and the real profile. Use SessionRunner with the tmp_path
+`store`/`cfg` fixtures instead.
+"""
 
 from __future__ import annotations
 

@@ -112,3 +112,19 @@ def test_doctor_reports_without_side_effects(cfg, store):
     assert {"python", "playwright", "chromium", "profile dir", ".gitignore", "stages"} <= names
     assert not cfg.profile_dir.exists()  # doctor creates nothing
     assert not store.dir.exists()
+
+
+def test_unattended_requires_explicit_opt_in(tmp_path):
+    import argparse
+
+    from instaclean.main import unattended_refusal
+    base = Config(profile_dir=tmp_path / "p", dry_run=False)
+    ok = argparse.Namespace(real=True, limit=None)
+    assert Config().allow_unattended is False
+    assert unattended_refusal(base, ok)  # not allowed in .env
+    allowed = Config(profile_dir=tmp_path / "p", dry_run=False, allow_unattended=True)
+    assert unattended_refusal(allowed, ok) is None
+    assert unattended_refusal(allowed, argparse.Namespace(real=False, limit=None))
+    assert unattended_refusal(allowed, argparse.Namespace(real=True, limit=3))
+    dry = Config(profile_dir=tmp_path / "p", allow_unattended=True)
+    assert unattended_refusal(dry, ok)

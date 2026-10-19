@@ -54,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--doctor", action="store_true",
                    help="check Python, dependencies, Chromium, profile, .env and git hygiene")
     p.add_argument("--debug", action="store_true", help="save screenshots/DOM snapshots locally")
+    p.add_argument("--unattended", action="store_true",
+                   help="scheduled normal sessions without the UNLIKE prompt; needs "
+                        "INSTACLEAN_ALLOW_UNATTENDED=true in .env and all stages done")
     return p
 
 
@@ -88,6 +91,17 @@ def confirm_real(summary: str) -> bool:
     return True
 
 
+def unattended_refusal(cfg: Config, args: argparse.Namespace) -> str | None:
+    """Unattended runs are only normal real sessions, explicitly allowed in .env."""
+    if not cfg.allow_unattended:
+        return "set INSTACLEAN_ALLOW_UNATTENDED=true in .env"
+    if not args.real or cfg.dry_run:
+        return "needs --real and INSTACLEAN_DRY_RUN=false"
+    if args.limit is not None:
+        return "only for normal sessions (no --limit)"
+    return None
+
+
 def print_summary(s: SessionState) -> None:
     keys = ("session_id", "mode", "stage", "status", "attempted", "successful", "failed",
             "uncertain", "batches_completed", "last_batch_size", "dry_run_selected",
@@ -111,6 +125,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None and args.limit < 1:
         print("--limit must be >= 1")
         return 1
+    if args.unattended:
+        refusal = unattended_refusal(cfg, args)
+        if refusal:
+            print(f"Unattended mode refused: {refusal}")
+            return 2
 
     store = CheckpointStore(cfg.checkpoints_dir)
     if args.doctor:
@@ -149,7 +168,10 @@ def main(argv: list[str] | None = None) -> int:
         ui = InstagramLikesUI(page, rng)
         runner = SessionRunner(ui, cfg, store, rng)
         try:
-            session = runner.run(limit=args.limit, confirm=confirm_real)
+            if args.unattended:
+                log.warning("UNATTENDED run: confirmation given by INSTACLEAN_ALLOW_UNATTENDED")
+            confirm = (lambda _s: True) if args.unattended else confirm_real
+            session = runner.run(limit=args.limit, confirm=confirm)
         except StopCondition as exc:  # gate / user abort before the session exists
             log.error("STOP before session start: %s", exc)
             return 2

@@ -62,6 +62,7 @@ class Config:
     post_unlike_grace_seconds: float = POST_UNLIKE_GRACE_SECONDS
     verify_recheck_seconds: float = VERIFY_RECHECK_SECONDS
     verify_rechecks: int = VERIFY_RECHECKS
+    allow_unattended: bool = False
     profile_dir: Path = field(default_factory=lambda: DEFAULT_PROFILE_DIR.expanduser())
     data_dir: Path = REPO_ROOT
 
@@ -149,6 +150,7 @@ _ENV_KEYS = {
     "INSTACLEAN_BLOCK_COOLDOWN_HOURS": ("block_cooldown_hours", float),
     "INSTACLEAN_VERIFY_RECHECK_SECONDS": ("verify_recheck_seconds", float),
     "INSTACLEAN_VERIFY_RECHECKS": ("verify_rechecks", int),
+    "INSTACLEAN_ALLOW_UNATTENDED": ("allow_unattended", parse_bool),
     "INSTACLEAN_PROFILE_DIR": ("profile_dir", lambda v: Path(v).expanduser()),
 }
 
