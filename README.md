@@ -19,8 +19,9 @@ before doing anything else. If something looks wrong, it stops.
 > [!WARNING]
 > **No tool can promise your account will not be restricted.** Instagram does not
 > publish its limits, and using automation can lead to temporary blocks or other
-> restrictions. Instaclean does not try to look human or hide that it is
-> automated. Its approach is to do less, verify everything and **stop at the first sign of trouble**.
+> restrictions. Instaclean does not hide that it is automated (no stealth tricks, no fake
+> fingerprints). It only keeps sessions at the hours you would normally be on Instagram.
+> Its approach is to do less, verify everything and **stop at the first sign of trouble**.
 > Use it on your own account, at your own risk.
 
 ---
@@ -54,7 +55,7 @@ before doing anything else. If something looks wrong, it stops.
 | Keeps the session in a dedicated browser profile on your Mac | Read, export or log cookies/tokens; touch your Chrome/Safari profile or Keychain |
 | Verifies every batch after a reload | Count a click as a success |
 | Stops on CAPTCHA, Action Blocked, rate limits, login or identity checks | Solve CAPTCHAs, bypass limits, use "stealth" tricks or fake fingerprints |
-| Pauses between sessions and after any block | Run in the background, schedule itself, or retry an uncertain unlike |
+| Pauses between sessions and after any block; starts real sessions only in morning, mid-morning and evening windows | Run in the background, schedule itself, or retry an uncertain unlike |
 | Starts in **dry run** | Switch to real mode on its own |
 
 ---
@@ -159,7 +160,7 @@ stateDiagram-v2
     RealTest --> ManualCheck: 3 verified unlikes
     ManualCheck --> FirstBatch: you check by hand, then --mark-verified
     FirstBatch --> Normal: --real --limit 20 OK
-    Normal --> Normal: --real, max 500 per session, 12 h pause
+    Normal --> Normal: --real, max 500 per session, 12 h pause, active hours only
     Normal --> Cooldown: CAPTCHA, Action Blocked, rate limit, identity check
     Cooldown --> Normal: after 72 h, by hand
     note right of DryRun
@@ -276,20 +277,37 @@ written to disk, even when you log in by hand.
 
 ## Running it every day
 
-After the five setup steps, one normal session per day can run without you typing `UNLIKE`:
+After the five setup steps, normal sessions can run without you typing `UNLIKE`:
 
 1. In `.env`: `INSTACLEAN_ALLOW_UNATTENDED=true` (this is the switch; `false` turns it off).
 2. Command: `.venv/bin/python -m instaclean --real --unattended`
-3. Schedule it with anything that runs a command daily. With the Claude desktop app, a scheduled
+3. Schedule it with anything that runs a command. With the Claude desktop app, a scheduled
    task can run it, read the result and tell you if it stopped.
+
+**When to schedule it: three times a day, inside the active hours.** A trigger at noon and
+another at midnight is a pattern no person has. Schedule it in the morning, mid-morning and
+evening instead (for example 07:40, 10:40 and 20:40, cron `40 7,10,20 * * *`) and let the
+12 h pause decide which of them actually runs:
+
+| Day | 07:40 | 10:40 | 20:40 |
+|---|---|---|---|
+| 1 | **runs** (ends ~08:10) | pause | **runs** (ends ~21:10) |
+| 2 | pause (until ~09:10) | **runs** (ends ~11:10) | pause (until ~23:10) |
+| 3 | **runs** | pause | **runs** |
+
+So the start time changes from day to day, never falls at night, and averages about
+1.5 sessions (~750 likes) a day. If you prefer one session a day, schedule a single trigger
+inside one window. Unattended runs also wait a random 0–20 min before starting
+(`INSTACLEAN_START_JITTER_MINUTES`), because a scheduler fires at the same minute every day.
 
 ```mermaid
 flowchart LR
     T([Daily trigger]) --> C{INSTACLEAN_ALLOW_UNATTENDED?}
     C -->|false| X1([Refused])
-    C -->|true| G{All stages done?<br/>12 h pause / 72 h cooldown over?}
+    C -->|true| G{All stages done?<br/>12 h pause / 72 h cooldown over?<br/>inside active hours?}
     G -->|no| X2([Refused, nothing opened])
-    G -->|yes| E{Login older than<br/>SESSION_MAX_DAYS?}
+    G -->|yes| J[Random wait 0-20 min] --> E
+    E{Login older than<br/>SESSION_MAX_DAYS?}
     E -->|yes| W[Wipe profile] --> L([login_required: run --login])
     E -->|no| S[Session: up to 500, verified batches]
     S --> R([Summary + exit code])
@@ -326,12 +344,14 @@ pacing between sessions, not how fast the clicks are.
 | Time per session | ~7–15 min | measured 2026-10-19: 500 verified unlikes in 7 min (`all`); `posts` takes longer |
 | Minimum pause between sessions | 12 h | enforced; `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` |
 | Pause after any block signal | 72 h | enforced; `INSTACLEAN_BLOCK_COOLDOWN_HOURS` |
+| When real sessions may start | 07:00–09:30, 10:00–12:00, 18:30–22:00 local | enforced; `INSTACLEAN_ACTIVE_HOURS` |
 
 ### 30,000 likes in practice
 
 | Pace | Sessions/day | Likes/day | Calendar time | Program running |
 |---|---|---|---|---|
 | Fastest the defaults allow | 2 | 1,000 | **~30 days** | ~10–15 h total |
+| Three daily triggers (morning, mid-morning, evening) | ~1.5 | ~750 | **~40 days** | ~10–15 h total |
 | Recommended | 1 | 500 | **~60 days** | ~10–15 h total |
 | Very conservative (`MAX_ACTIONS=300`) | 1 | 300 | **~100 days** | ~10–15 h total |
 | With a block or two along the way | — | — | add 3 days per block | — |
@@ -372,6 +392,7 @@ to every warning:
 |---|---|
 | **Low volume per run** | 500 unlikes per session by default; batches never above 100 (hard cap in code) |
 | **Pause between sessions** | Real mode is refused for 12 h after a full-size session |
+| **Human hours only** | Real sessions only start in the morning, mid-morning and evening (`INSTACLEAN_ACTIVE_HOURS`, local time); never at night. Scheduled runs add a random 0–20 min start delay so they don't begin at the same minute every day |
 | **Stop at the first warning** | CAPTCHA, *Action Blocked*, *Try again later*, "we limit how often", identity checks, "automated behaviour" warnings, forced login, unknown errors, unexpected pages |
 | **Long cooldown after a warning** | Real mode is refused for 72 h after any of the above |
 | **No retries of destructive actions** | An uncertain unlike is checked later; it is never clicked again automatically |
@@ -400,7 +421,9 @@ are less likely to trigger. None of them hides that a tool is in use.
 - **Keep 2FA on**, and log in only through the Instaclean window (`--login`), never by
   pasting cookies or tokens anywhere.
 - **Don't run other automation** on the same account (follow/unfollow tools, schedulers, bots).
-- **Keep the defaults or go lower:** 500 per day, 12 h pause. If you ever see a warning, go
+- **Run at your normal hours.** Keep the active hours close to when you really use Instagram,
+  and never schedule runs at night or at round, fixed times like noon and midnight.
+- **Keep the defaults or go lower:** 500 per session, 12 h pause. If you ever see a warning, go
   down to 200–300.
 - **Don't stack sessions.** If a run stops, read why before running again (`--status`, `logs/`).
 - **Leave the account language alone** during the weeks of cleanup: the stop detection reads
@@ -471,6 +494,8 @@ Copy `.env.example` to `.env` (gitignored). **Never put a password, cookie or to
 | `INSTACLEAN_INITIAL_TEST_SIZE` | `3` | size of the first real test |
 | `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` | `12` | enforced pause after a full-size real session |
 | `INSTACLEAN_BLOCK_COOLDOWN_HOURS` | `72` | enforced pause after any block/limit/CAPTCHA/identity stop |
+| `INSTACLEAN_ACTIVE_HOURS` | `07:00-09:30,10:00-12:00,18:30-22:00` | local-time windows in which a real session may **start**; empty = any hour. Dry runs are never restricted |
+| `INSTACLEAN_START_JITTER_MINUTES` | `20` | unattended runs wait a random 0..N minutes (max 120) before opening the browser |
 | `INSTACLEAN_VERIFY_RECHECK_SECONDS` / `INSTACLEAN_VERIFY_RECHECKS` | `45` / `2` | Instagram applies bulk unlikes asynchronously: items still listed after the reload are re-checked (read-only) this many times before counting as failed |
 | `INSTACLEAN_ALLOW_UNATTENDED` | `false` | allows `--real --unattended` (no UNLIKE prompt) for scheduled **normal** sessions only, after all stages; pauses, cooldowns and stops still apply |
 | `INSTACLEAN_BROWSER` | `visible` | `visible`, `background` (minimized) or `headless` (no window) — see [Options](#options) |
@@ -517,6 +542,7 @@ is **not** meant to evade detection and it will not.
 |---|---|
 | `stage_gate` | Run the step named in the message |
 | `cooldown` | Wait until the time shown (`--status`) |
+| `outside_active_hours` | Normal: real sessions only start inside `INSTACLEAN_ACTIVE_HOURS`. Run it (or schedule it) inside a window |
 | `Real mode refused` | Set `INSTACLEAN_DRY_RUN=false` in `.env` **and** pass `--real` |
 | `selector_failure`, "Menu navigation failed" | Instagram changed its layout or your language isn't covered. Run with `--debug`, look at `Diagnostics:` in `logs/`, adjust `instaclean/selectors.py` |
 | `selection_mismatch` | Instagram may cap how many items can be selected. Lower `INSTACLEAN_BATCH_MAX` |
@@ -539,7 +565,7 @@ is **not** meant to evade detection and it will not.
 
 | Kind | What is covered |
 |---|---|
-| **Automated** | batch range 80–100, hard cap 100, session limit, fewer than 80 left, empty list, dry run, stage gate, real-mode confirmation, selection mismatch, verification failure, uncertain results, every stop condition, cooldowns, checkpoints (atomic, 0600, no personal data, corruption), crash recovery, `--doctor`, static security scan, `.gitignore` coverage, unattended opt-in, content type detection, login expiry and safe profile wipe (no symlink following, personal folders refused), password-saving disabled |
+| **Automated** | batch range 80–100, hard cap 100, session limit, fewer than 80 left, empty list, dry run, stage gate, real-mode confirmation, selection mismatch, verification failure, uncertain results, every stop condition, cooldowns, active hours, checkpoints (atomic, 0600, no personal data, corruption), crash recovery, `--doctor`, static security scan, `.gitignore` coverage, unattended opt-in, content type detection, login expiry and safe profile wipe (no symlink following, personal folders refused), password-saving disabled |
 | **Automated, mock DOM** | The real Playwright layer driven against a local imitation of the Likes page (network blocked): menu navigation, infinite scroll, select, unlike, verification, Action Blocked + recovery, CAPTCHA frame, closed browser, posts-only filtering, no waiting for a login when there is no window |
 | **Manual (required)** | Anything about the real instagram.com: the five steps above |
 

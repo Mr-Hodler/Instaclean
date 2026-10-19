@@ -7,6 +7,7 @@ Instagram thresholds and do not make automation "safe" from restrictions.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping
@@ -22,6 +23,12 @@ DEBUG = False
 # hide automation and are not Instagram's numbers.
 MIN_HOURS_BETWEEN_SESSIONS = 12.0
 BLOCK_COOLDOWN_HOURS = 72.0
+# Real sessions only start inside these local-time windows (morning, mid-morning,
+# evening), like a person's day: never at night or at the same clock time.
+# Empty string = no restriction.
+ACTIVE_HOURS = "07:00-09:30,10:00-12:00,18:30-22:00"
+# Unattended runs wait a random 0..N minutes before opening the browser.
+START_JITTER_MINUTES = 20
 # Instagram applies a bulk Unlike asynchronously: give the server time before
 # deciding an item is still liked. Only the CHECK is repeated, never the action.
 POST_UNLIKE_GRACE_SECONDS = 5.0
@@ -67,6 +74,8 @@ class Config:
     debug: bool = DEBUG
     min_hours_between_sessions: float = MIN_HOURS_BETWEEN_SESSIONS
     block_cooldown_hours: float = BLOCK_COOLDOWN_HOURS
+    active_hours: str = ACTIVE_HOURS
+    start_jitter_minutes: int = START_JITTER_MINUTES
     post_unlike_grace_seconds: float = POST_UNLIKE_GRACE_SECONDS
     verify_recheck_seconds: float = VERIFY_RECHECK_SECONDS
     verify_rechecks: int = VERIFY_RECHECKS
@@ -101,6 +110,9 @@ class Config:
             raise ValueError("INITIAL_TEST_SIZE must be between 1 and 100")
         if self.min_hours_between_sessions < 0 or self.block_cooldown_hours < 0:
             raise ValueError("cooldown hours must be >= 0")
+        parse_active_hours(self.active_hours)
+        if not 0 <= self.start_jitter_minutes <= 120:
+            raise ValueError("INSTACLEAN_START_JITTER_MINUTES must be between 0 and 120")
         if self.verify_rechecks < 0 or self.verify_recheck_seconds < 0 \
                 or self.post_unlike_grace_seconds < 0:
             raise ValueError("verification timings must be >= 0")
@@ -129,6 +141,27 @@ def check_profile_dir(path: Path, repo_root: Path, home: Path | None = None) -> 
         rel_parts = set(p.relative_to(repo).parts)
         if not rel_parts & _IGNORED_PROFILE_PARTS:
             raise ValueError("profile dir inside the repo must be under a gitignored folder")
+
+
+def parse_active_hours(value: str) -> list[tuple[int, int]]:
+    """'07:00-09:30,18:30-22:00' -> [(420, 570), (1110, 1320)] in minutes of the day."""
+    windows: list[tuple[int, int]] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", part)
+        if not m:
+            raise ValueError(f"INSTACLEAN_ACTIVE_HOURS: bad window {part!r} (use HH:MM-HH:MM)")
+        h1, m1, h2, m2 = map(int, m.groups())
+        if h1 > 23 or h2 > 23 or m1 > 59 or m2 > 59:
+            raise ValueError(f"INSTACLEAN_ACTIVE_HOURS: bad time in {part!r}")
+        start, end = h1 * 60 + m1, h2 * 60 + m2
+        if start >= end:
+            raise ValueError(f"INSTACLEAN_ACTIVE_HOURS: {part!r} must end after it starts "
+                             "(windows across midnight are not allowed)")
+        windows.append((start, end))
+    return windows
 
 
 def parse_bool(value: str) -> bool:
@@ -166,6 +199,8 @@ _ENV_KEYS = {
     "INSTACLEAN_DEBUG": ("debug", parse_bool),
     "INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS": ("min_hours_between_sessions", float),
     "INSTACLEAN_BLOCK_COOLDOWN_HOURS": ("block_cooldown_hours", float),
+    "INSTACLEAN_ACTIVE_HOURS": ("active_hours", str.strip),
+    "INSTACLEAN_START_JITTER_MINUTES": ("start_jitter_minutes", int),
     "INSTACLEAN_VERIFY_RECHECK_SECONDS": ("verify_recheck_seconds", float),
     "INSTACLEAN_VERIFY_RECHECKS": ("verify_rechecks", int),
     "INSTACLEAN_ALLOW_UNATTENDED": ("allow_unattended", parse_bool),

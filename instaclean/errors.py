@@ -36,6 +36,7 @@ class StopReason(str, Enum):
     CHECKPOINT_ERROR = "checkpoint_error"
     STAGE_GATE = "stage_gate"
     COOLDOWN = "cooldown"
+    OUTSIDE_ACTIVE_HOURS = "outside_active_hours"
     USER_ABORT = "user_abort"
     INTERNAL_ERROR = "internal_error"
 

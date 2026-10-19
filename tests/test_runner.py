@@ -6,6 +6,8 @@ mismatch, verification failure, uncertain outcome, stop conditions, stage gate.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from conftest import FakeLikesUI, real, unlock
 
@@ -282,6 +284,48 @@ def test_small_test_runs_do_not_start_the_pause(cfg, store, rng):
     unlock(store, "dry_run")
     run(FakeLikesUI(30), real(cfg), store, rng, limit=3)
     check_cooldown(store, real(cfg))  # 3 < BATCH_MIN: no pause needed
+
+
+def _at(hour: int, minute: int = 0):
+    from datetime import datetime
+    return datetime.now().astimezone().replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def test_active_hours_allow_morning_midmorning_evening(cfg):
+    from instaclean.runner import check_active_hours
+    c = real(cfg, active_hours="07:00-09:30,10:00-12:00,18:30-22:00")
+    for h, m in ((7, 0), (9, 29), (10, 45), (18, 30), (21, 59)):
+        check_active_hours(c, now=_at(h, m))
+
+
+def test_active_hours_refuse_night_noon_and_gaps(cfg):
+    from instaclean.runner import check_active_hours
+    c = real(cfg, active_hours="07:00-09:30,10:00-12:00,18:30-22:00")
+    for h, m in ((0, 0), (3, 0), (6, 59), (9, 30), (12, 0), (14, 30), (22, 0), (23, 30)):
+        with pytest.raises(StopCondition) as e:
+            check_active_hours(c, now=_at(h, m))
+        assert e.value.reason is StopReason.OUTSIDE_ACTIVE_HOURS
+
+
+def test_active_hours_never_restrict_dry_run_or_empty_setting(cfg):
+    from instaclean.runner import check_active_hours
+    check_active_hours(replace(cfg, active_hours="07:00-08:00"), now=_at(3))
+    check_active_hours(real(cfg, active_hours=""), now=_at(3))
+
+
+def test_runner_refuses_real_session_outside_active_hours(cfg, store, rng):
+    from datetime import datetime
+    _ready_all(store)
+    now = datetime.now().astimezone()
+    minute = now.hour * 60 + now.minute
+    # a one-minute window that is certainly not "now"
+    other = (minute + 120) % (24 * 60 - 1)
+    window = f"{other // 60:02d}:{other % 60:02d}-{(other + 1) // 60:02d}:{(other + 1) % 60:02d}"
+    ui = FakeLikesUI(1000)
+    with pytest.raises(StopCondition) as e:
+        run(ui, real(cfg, active_hours=window), store, rng)
+    assert e.value.reason is StopReason.OUTSIDE_ACTIVE_HOURS
+    assert ui.unlike_calls == 0
 
 
 def test_non_block_stop_does_not_trigger_block_cooldown(cfg, store, rng):

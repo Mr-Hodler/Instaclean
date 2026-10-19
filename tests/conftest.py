@@ -113,7 +113,8 @@ def store(tmp_path: Path) -> CheckpointStore:
 
 @pytest.fixture
 def cfg(tmp_path: Path) -> Config:
-    return Config(profile_dir=tmp_path / "profile", data_dir=tmp_path)
+    # No time-of-day window in tests: the suite must pass at any hour.
+    return Config(profile_dir=tmp_path / "profile", data_dir=tmp_path, active_hours="")
 
 
 def real(cfg: Config, **kw: object) -> Config:

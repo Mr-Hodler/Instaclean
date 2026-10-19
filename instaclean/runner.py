@@ -13,7 +13,7 @@ from typing import Callable, Protocol, Sequence
 
 from .batch import next_batch_target, plan_batch_size
 from .checkpoint import CheckpointStore, SessionState, utcnow
-from .config import HARD_BATCH_CAP, Config
+from .config import HARD_BATCH_CAP, Config, parse_active_hours
 from .errors import (
     ActionNotSubmitted,
     RetryableError,
@@ -126,6 +126,26 @@ def check_cooldown(store: CheckpointStore, cfg: Config, now: datetime | None = N
             )
 
 
+def check_active_hours(cfg: Config, now: datetime | None = None) -> None:
+    """Refuse REAL mode outside the local-time windows of INSTACLEAN_ACTIVE_HOURS.
+
+    Keeps sessions at the hours a person is normally on the phone (morning,
+    mid-morning, evening), never at night. Dry runs are never restricted.
+    """
+    windows = parse_active_hours(cfg.active_hours)
+    if cfg.dry_run or not windows:
+        return
+    local = (now or _now()).astimezone()
+    minute = local.hour * 60 + local.minute
+    if any(start <= minute < end for start, end in windows):
+        return
+    raise StopCondition(
+        StopReason.OUTSIDE_ACTIVE_HOURS,
+        f"it is {local:%H:%M} local time; real sessions only start in "
+        f"{cfg.active_hours} (INSTACLEAN_ACTIVE_HOURS)",
+    )
+
+
 def mark_manual_verified(store: CheckpointStore) -> None:
     if "real_test" not in store.stages():
         raise StopCondition(StopReason.STAGE_GATE, "run the 3-like real test before --mark-verified")
@@ -159,6 +179,7 @@ class SessionRunner:
 
         stage = check_gate(self.store, self.cfg, limit)
         check_cooldown(self.store, self.cfg)
+        check_active_hours(self.cfg)
         max_actions = self.cfg.max_actions_per_session
         if limit is not None:
             max_actions = min(max_actions, limit)

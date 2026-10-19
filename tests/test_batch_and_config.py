@@ -25,6 +25,21 @@ def test_defaults_match_spec():
     assert c.debug is False
 
 
+def test_active_hours_parsing():
+    from instaclean.config import parse_active_hours
+    assert parse_active_hours("07:00-09:30, 18:30-22:00") == [(420, 570), (1110, 1320)]
+    assert parse_active_hours("") == []
+    assert Config().active_hours == "07:00-09:30,10:00-12:00,18:30-22:00"
+    for bad in ("7-9", "09:30-07:00", "22:00-01:00", "25:00-26:00", "07:00-07:00"):
+        with pytest.raises(ValueError):
+            parse_active_hours(bad)
+    env = {"INSTACLEAN_ACTIVE_HOURS": "08:00-09:00", "INSTACLEAN_START_JITTER_MINUTES": "5"}
+    c = load_config(environ=env)
+    assert (c.active_hours, c.start_jitter_minutes) == ("08:00-09:00", 5)
+    with pytest.raises(ValueError):
+        load_config(environ={"INSTACLEAN_START_JITTER_MINUTES": "500"})
+
+
 def test_random_batch_always_within_80_100(cfg):
     rng = random.Random(0)
     sizes = [next_batch_target(rng, cfg, remaining_session=10_000) for _ in range(20_000)]

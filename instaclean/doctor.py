@@ -91,6 +91,9 @@ def collect(cfg: Config, store: CheckpointStore) -> list[tuple[str, str, str]]:
     add(OK, "mode", "DRY RUN" if cfg.dry_run else "REAL allowed with --real")
     add(OK, "limits", f"batch {cfg.batch_min}-{cfg.batch_max}, session {cfg.max_actions_per_session}, "
         f"pause {cfg.min_hours_between_sessions}h, after block {cfg.block_cooldown_hours}h")
+    add(OK if cfg.active_hours else WARN, "active hours",
+        f"{cfg.active_hours} local, start jitter {cfg.start_jitter_minutes} min"
+        if cfg.active_hours else "off: real sessions can start at any hour")
     add(OK, "browser", f"{cfg.browser_mode}, content {cfg.content}, "
         f"unattended {'allowed' if cfg.allow_unattended else 'off'}")
     from .browser import login_age_days

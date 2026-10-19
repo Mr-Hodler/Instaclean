@@ -19,12 +19,19 @@ import logging
 import os
 import random
 import sys
+import time
 from datetime import datetime
 
 from .checkpoint import CheckpointStore, SessionState
 from .config import REPO_ROOT, Config, load_config
 from .errors import StopCondition, StopReason
-from .runner import SessionRunner, check_cooldown, check_gate, mark_manual_verified
+from .runner import (
+    SessionRunner,
+    check_active_hours,
+    check_cooldown,
+    check_gate,
+    mark_manual_verified,
+)
 
 log = logging.getLogger("instaclean")
 
@@ -165,6 +172,13 @@ def main(argv: list[str] | None = None) -> int:
         if not (last and last.pending_batch):
             check_gate(store, cfg, args.limit)  # fail before opening the browser
             check_cooldown(store, cfg)
+            check_active_hours(cfg)
+            if args.unattended and cfg.start_jitter_minutes:
+                # A scheduler fires at the same clock time every day; a person doesn't.
+                delay = random.uniform(0, cfg.start_jitter_minutes * 60)
+                print(f"Unattended: waiting {delay / 60:.1f} min before starting")
+                time.sleep(delay)
+                check_active_hours(cfg)
     except StopCondition as exc:
         print(f"STOP: {exc}")
         return 2
