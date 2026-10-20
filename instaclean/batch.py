@@ -11,6 +11,12 @@ import random
 from .config import HARD_BATCH_CAP, Config
 
 
+def session_action_cap(rng: random.Random, cfg: Config) -> int:
+    """This session's cap: MAX_ACTIONS_PER_SESSION +/- SESSION_LIMIT_JITTER, drawn once."""
+    j = cfg.session_limit_jitter
+    return max(1, cfg.max_actions_per_session + rng.randint(-j, j))
+
+
 def next_batch_target(rng: random.Random, cfg: Config, remaining_session: int) -> int:
     """How many items we would like to load/select for the next batch.
 

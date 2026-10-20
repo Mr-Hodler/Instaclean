@@ -16,6 +16,9 @@ from typing import Mapping
 BATCH_MIN = 80
 BATCH_MAX = 100
 MAX_ACTIONS_PER_SESSION = 500
+# Each session draws its cap at random in MAX_ACTIONS_PER_SESSION +/- this
+# (default 480-520), so sessions do not all stop at the same round number.
+SESSION_LIMIT_JITTER = 20
 DRY_RUN = True
 INITIAL_TEST_SIZE = 3
 DEBUG = False
@@ -69,6 +72,7 @@ class Config:
     batch_min: int = BATCH_MIN
     batch_max: int = BATCH_MAX
     max_actions_per_session: int = MAX_ACTIONS_PER_SESSION
+    session_limit_jitter: int = SESSION_LIMIT_JITTER
     dry_run: bool = DRY_RUN
     initial_test_size: int = INITIAL_TEST_SIZE
     debug: bool = DEBUG
@@ -106,6 +110,9 @@ class Config:
             raise ValueError(f"BATCH_MAX cannot exceed {HARD_BATCH_CAP}")
         if self.max_actions_per_session < 1:
             raise ValueError("MAX_ACTIONS_PER_SESSION must be >= 1")
+        if not 0 <= self.session_limit_jitter < self.max_actions_per_session:
+            raise ValueError("INSTACLEAN_SESSION_LIMIT_JITTER must be >= 0 and below "
+                             "MAX_ACTIONS_PER_SESSION")
         if not 1 <= self.initial_test_size <= HARD_BATCH_CAP:
             raise ValueError("INITIAL_TEST_SIZE must be between 1 and 100")
         if self.min_hours_between_sessions < 0 or self.block_cooldown_hours < 0:
@@ -194,6 +201,7 @@ _ENV_KEYS = {
     "INSTACLEAN_BATCH_MIN": ("batch_min", int),
     "INSTACLEAN_BATCH_MAX": ("batch_max", int),
     "INSTACLEAN_MAX_ACTIONS_PER_SESSION": ("max_actions_per_session", int),
+    "INSTACLEAN_SESSION_LIMIT_JITTER": ("session_limit_jitter", int),
     "INSTACLEAN_DRY_RUN": ("dry_run", parse_bool),
     "INSTACLEAN_INITIAL_TEST_SIZE": ("initial_test_size", int),
     "INSTACLEAN_DEBUG": ("debug", parse_bool),

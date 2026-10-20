@@ -4,7 +4,7 @@
     python -m instaclean --real --limit 3     # first real test: 3 likes
     python -m instaclean --mark-verified      # after checking the 3 by hand
     python -m instaclean --real --limit 20    # small first batch
-    python -m instaclean --real               # normal batches (80-100), session cap 500
+    python -m instaclean --real               # normal batches (80-100), session cap 480-520 (random)
     python -m instaclean --status             # show checkpoints
     python -m instaclean --doctor             # check the environment
 

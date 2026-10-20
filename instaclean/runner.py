@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol, Sequence
 
-from .batch import next_batch_target, plan_batch_size
+from .batch import next_batch_target, plan_batch_size, session_action_cap
 from .checkpoint import CheckpointStore, SessionState, utcnow
 from .config import HARD_BATCH_CAP, Config, parse_active_hours
 from .errors import (
@@ -180,7 +180,7 @@ class SessionRunner:
         stage = check_gate(self.store, self.cfg, limit)
         check_cooldown(self.store, self.cfg)
         check_active_hours(self.cfg)
-        max_actions = self.cfg.max_actions_per_session
+        max_actions = session_action_cap(self.rng, self.cfg)
         if limit is not None:
             max_actions = min(max_actions, limit)
 

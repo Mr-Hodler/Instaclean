@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from instaclean.batch import next_batch_target, plan_batch_size
+from instaclean.batch import next_batch_target, plan_batch_size, session_action_cap
 from instaclean.config import (
     HARD_BATCH_CAP,
     Config,
@@ -20,6 +20,7 @@ from instaclean.config import (
 def test_defaults_match_spec():
     c = Config()
     assert (c.batch_min, c.batch_max, c.max_actions_per_session) == (80, 100, 500)
+    assert c.session_limit_jitter == 20
     assert c.dry_run is True
     assert c.initial_test_size == 3
     assert c.debug is False
@@ -45,6 +46,16 @@ def test_random_batch_always_within_80_100(cfg):
     sizes = [next_batch_target(rng, cfg, remaining_session=10_000) for _ in range(20_000)]
     assert min(sizes) == 80 and max(sizes) == 100
     assert len(set(sizes)) == 21  # every value in range is reachable
+
+
+def test_session_cap_random_480_520(cfg):
+    rng = random.Random(3)
+    caps = [session_action_cap(rng, cfg) for _ in range(5000)]
+    assert min(caps) == 480 and max(caps) == 520
+    assert len(set(caps)) == 41
+    fixed = Config(profile_dir=cfg.profile_dir, session_limit_jitter=0)
+    assert session_action_cap(rng, fixed) == 500
+    assert load_config(environ={"INSTACLEAN_SESSION_LIMIT_JITTER": "5"}).session_limit_jitter == 5
 
 
 def test_batch_never_exceeds_hard_cap(cfg):
@@ -73,6 +84,8 @@ def test_fewer_than_min_available_processes_remaining():
     {"batch_min": 90, "batch_max": 85},
     {"batch_min": 0},
     {"max_actions_per_session": 0},
+    {"session_limit_jitter": -1},
+    {"max_actions_per_session": 20, "session_limit_jitter": 20},
     {"initial_test_size": 0},
 ])
 def test_invalid_config_rejected(tmp_path, kw):

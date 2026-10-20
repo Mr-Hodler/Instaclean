@@ -107,18 +107,27 @@ def test_normal_batches_random_80_100_until_session_limit(cfg, store, rng):
     ui = FakeLikesUI(2000)
     s = run(ui, real(cfg), store, rng)
     assert s.status == "session_limit_reached"
-    assert s.attempted == 500 and s.successful == 500
+    assert 480 <= s.attempted <= 520 and s.successful == s.attempted
+    assert s.action_limit == s.attempted
     sizes = [b["size"] for b in s.batches]
-    assert sum(sizes) == 500
+    assert sum(sizes) == s.attempted
     assert all(sz <= 100 for sz in sizes)
     assert all(80 <= sz <= 100 for sz in sizes[:-1])  # only the last can be cut by the cap
-    assert len(ui.liked) == 1500
+    assert len(ui.liked) == 2000 - s.attempted
+
+
+def test_session_limit_varies_between_sessions(cfg, store, rng):
+    unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
+    rc = real(cfg, min_hours_between_sessions=0)
+    totals = {run(FakeLikesUI(2000), rc, store, rng).attempted for _ in range(5)}
+    assert all(480 <= t <= 520 for t in totals)
+    assert len(totals) > 1
 
 
 def test_custom_session_limit(cfg, store, rng):
     unlock(store, "dry_run", "real_test", "manual_verified", "first_batch")
     ui = FakeLikesUI(2000)
-    s = run(ui, real(cfg, max_actions_per_session=130), store, rng)
+    s = run(ui, real(cfg, max_actions_per_session=130, session_limit_jitter=0), store, rng)
     assert s.attempted == 130 and s.status == "session_limit_reached"
 
 
@@ -354,7 +363,7 @@ def test_partial_load_processes_loaded_items(cfg, store, rng):
     ui = FakeLikesUI(500)
     orig = ui.discover
     ui.discover = lambda t: Discovery(items=orig(t).items[:27], end_reached=False)
-    s = run(ui, real(cfg, max_actions_per_session=27), store, rng)
+    s = run(ui, real(cfg, max_actions_per_session=27, session_limit_jitter=0), store, rng)
     assert s.batches[0]["size"] == 27 and s.successful == 27
 
 

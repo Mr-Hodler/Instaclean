@@ -89,7 +89,7 @@ def collect(cfg: Config, store: CheckpointStore) -> list[tuple[str, str, str]]:
     else:
         add(OK, ".env", "absent: defaults apply (dry run only)")
     add(OK, "mode", "DRY RUN" if cfg.dry_run else "REAL allowed with --real")
-    add(OK, "limits", f"batch {cfg.batch_min}-{cfg.batch_max}, session {cfg.max_actions_per_session}, "
+    add(OK, "limits", f"batch {cfg.batch_min}-{cfg.batch_max}, session {cfg.max_actions_per_session}±{cfg.session_limit_jitter}, "
         f"pause {cfg.min_hours_between_sessions}h, after block {cfg.block_cooldown_hours}h")
     add(OK if cfg.active_hours else WARN, "active hours",
         f"{cfg.active_hours} local, start jitter {cfg.start_jitter_minutes} min"

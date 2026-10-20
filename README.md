@@ -222,7 +222,7 @@ with the lock file, the Chromium install, profile and folder permissions,
 | 2 | set `INSTACLEAN_DRY_RUN=false` in `.env`, then `python -m instaclean --real --limit 3` | Type `UNLIKE` to confirm. Removes **3** likes and verifies them. | step 3 |
 | 3 | check on your phone, then `python -m instaclean --mark-verified` | You confirm those 3 posts are no longer liked and nothing else changed. | step 4 |
 | 4 | `python -m instaclean --real --limit 20` | First small batch. | step 5 |
-| 5 | `python -m instaclean --real` | Normal mode: batches of 80–100, **max 500 per session**, then exits. | — |
+| 5 | `python -m instaclean --real` | Normal mode: batches of 80–100, **480–520 per session** (random), then exits. | — |
 
 (`python` = `.venv/bin/python`.) Real mode needs **two** switches: `INSTACLEAN_DRY_RUN=false`
 in `.env` **and** `--real` on the command line. Either one alone gives you a dry run or a refusal.
@@ -390,7 +390,7 @@ to every warning:
 
 | Measure | How it is enforced |
 |---|---|
-| **Low volume per run** | 500 unlikes per session by default; batches never above 100 (hard cap in code) |
+| **Low volume per run** | 480–520 unlikes per session by default (random cap); batches never above 100 (hard cap in code) |
 | **Pause between sessions** | Real mode is refused for 12 h after a full-size session |
 | **Human hours only** | Real sessions only start in the morning, mid-morning and evening (`INSTACLEAN_ACTIVE_HOURS`, local time); never at night. Scheduled runs add a random 0–20 min start delay so they don't begin at the same minute every day |
 | **Stop at the first warning** | CAPTCHA, *Action Blocked*, *Try again later*, "we limit how often", identity checks, "automated behaviour" warnings, forced login, unknown errors, unexpected pages |
@@ -491,6 +491,7 @@ Copy `.env.example` to `.env` (gitignored). **Never put a password, cookie or to
 | `INSTACLEAN_DRY_RUN` | `true` | must be `false` **and** `--real` passed for real unlikes |
 | `INSTACLEAN_BATCH_MIN` / `INSTACLEAN_BATCH_MAX` | `80` / `100` | random batch size range; 100 is a hard cap in code |
 | `INSTACLEAN_MAX_ACTIONS_PER_SESSION` | `500` | unlikes per run (a local limit, not an Instagram number) |
+| `INSTACLEAN_SESSION_LIMIT_JITTER` | `20` | each session draws its cap at random in MAX ± this (default 480–520), so runs do not all stop at a round number; 0 = fixed cap |
 | `INSTACLEAN_INITIAL_TEST_SIZE` | `3` | size of the first real test |
 | `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` | `12` | enforced pause after a full-size real session |
 | `INSTACLEAN_BLOCK_COOLDOWN_HOURS` | `72` | enforced pause after any block/limit/CAPTCHA/identity stop |
