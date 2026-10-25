@@ -215,8 +215,17 @@ def run_login(cfg: Config) -> int:
         except StopCondition as exc:
             log.error("Login not completed: %s", exc)
             return 2
-    print(f"Logged in. The login expires on this Mac after {cfg.session_max_days} days"
-          if cfg.session_max_days else "Logged in.")
+    from .browser import login_age_days
+    age = login_age_days(cfg.profile_dir) or 0.0
+    if not cfg.session_max_days:
+        print("Logged in (login expiry is off).")
+    elif age < 0.01:
+        print(f"Logged in. This login expires on this Mac in {cfg.session_max_days} days.")
+    else:
+        left = max(cfg.session_max_days - age, 0)
+        print(f"Already logged in since {age:.1f} days: this login still expires in "
+              f"{left:.1f} days.\nFor a fresh {cfg.session_max_days}-day login: "
+              f"--logout, then --login.")
     return 0
 
 
