@@ -296,3 +296,15 @@ app aperta; se era chiusa, il task parte alla riapertura).
 - Non cambiare la lingua dell'account durante la pulizia.
 - Lascia scadere il login (14 giorni) e controlla ogni tanto *Dove hai effettuato l'accesso*.
 - A fine lavoro: `--logout`, logout della sessione su Instagram, cancella `checkpoints/ logs/ debug/`.
+
+## Orari e recupero
+
+Le fasce `07:00–09:30, 10:00–12:00, 18:30–22:00` sono **preferite**, non
+obbligatorie. Se il Mac era spento e nelle ultime 16 ore non è partita nessuna
+sessione, Instaclean fa un **recupero** anche fuori fascia
+(`INSTACLEAN_CATCHUP_AFTER_HOURS`, `0` = fasce rigide). Mai di notte: nessuna
+sessione tra le 00:30 e le 06:30 (`INSTACLEAN_QUIET_HOURS`). Con la pausa di
+12 ore si arriva al massimo a **due sessioni al giorno**.
+
+Il task pianificato controlla **ogni ora dalle 7:40 alle 23:40**: quasi sempre
+viene rifiutato in un secondo, e parte solo quando una sessione è dovuta.

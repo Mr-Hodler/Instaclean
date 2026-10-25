@@ -172,13 +172,13 @@ def main(argv: list[str] | None = None) -> int:
         if not (last and last.pending_batch):
             check_gate(store, cfg, args.limit)  # fail before opening the browser
             check_cooldown(store, cfg)
-            check_active_hours(cfg)
+            check_active_hours(cfg, store=store)
             if args.unattended and cfg.start_jitter_minutes:
                 # A scheduler fires at the same clock time every day; a person doesn't.
                 delay = random.uniform(0, cfg.start_jitter_minutes * 60)
                 print(f"Unattended: waiting {delay / 60:.1f} min before starting")
                 time.sleep(delay)
-                check_active_hours(cfg)
+                check_active_hours(cfg, store=store)
     except StopCondition as exc:
         print(f"STOP: {exc}")
         return 2

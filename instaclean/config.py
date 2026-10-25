@@ -30,6 +30,12 @@ BLOCK_COOLDOWN_HOURS = 72.0
 # evening), like a person's day: never at night or at the same clock time.
 # Empty string = no restriction.
 ACTIVE_HOURS = "07:00-09:30,10:00-12:00,18:30-22:00"
+# Active hours are PREFERRED: if no real session ended in the last N hours (a
+# slot was missed because the Mac was off), a catch-up session may start
+# outside them. 0 = strict (never outside the windows).
+CATCHUP_AFTER_HOURS = 16.0
+# Never start a real session in these local hours, catch-up included.
+QUIET_HOURS = "00:30-06:30"
 # Unattended runs wait a random 0..N minutes before opening the browser.
 START_JITTER_MINUTES = 20
 # Instagram applies a bulk Unlike asynchronously: give the server time before
@@ -80,6 +86,8 @@ class Config:
     block_cooldown_hours: float = BLOCK_COOLDOWN_HOURS
     active_hours: str = ACTIVE_HOURS
     start_jitter_minutes: int = START_JITTER_MINUTES
+    catchup_after_hours: float = CATCHUP_AFTER_HOURS
+    quiet_hours: str = QUIET_HOURS
     post_unlike_grace_seconds: float = POST_UNLIKE_GRACE_SECONDS
     verify_recheck_seconds: float = VERIFY_RECHECK_SECONDS
     verify_rechecks: int = VERIFY_RECHECKS
@@ -118,6 +126,9 @@ class Config:
         if self.min_hours_between_sessions < 0 or self.block_cooldown_hours < 0:
             raise ValueError("cooldown hours must be >= 0")
         parse_active_hours(self.active_hours)
+        parse_active_hours(self.quiet_hours)
+        if self.catchup_after_hours < 0:
+            raise ValueError("INSTACLEAN_CATCHUP_AFTER_HOURS must be >= 0")
         if not 0 <= self.start_jitter_minutes <= 120:
             raise ValueError("INSTACLEAN_START_JITTER_MINUTES must be between 0 and 120")
         if self.verify_rechecks < 0 or self.verify_recheck_seconds < 0 \
@@ -209,6 +220,8 @@ _ENV_KEYS = {
     "INSTACLEAN_BLOCK_COOLDOWN_HOURS": ("block_cooldown_hours", float),
     "INSTACLEAN_ACTIVE_HOURS": ("active_hours", str.strip),
     "INSTACLEAN_START_JITTER_MINUTES": ("start_jitter_minutes", int),
+    "INSTACLEAN_CATCHUP_AFTER_HOURS": ("catchup_after_hours", float),
+    "INSTACLEAN_QUIET_HOURS": ("quiet_hours", str.strip),
     "INSTACLEAN_VERIFY_RECHECK_SECONDS": ("verify_recheck_seconds", float),
     "INSTACLEAN_VERIFY_RECHECKS": ("verify_rechecks", int),
     "INSTACLEAN_ALLOW_UNATTENDED": ("allow_unattended", parse_bool),

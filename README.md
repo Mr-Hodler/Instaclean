@@ -284,27 +284,31 @@ After the five setup steps, normal sessions can run without you typing `UNLIKE`:
 3. Schedule it with anything that runs a command. With the Claude desktop app, a scheduled
    task can run it, read the result and tell you if it stopped.
 
-**When to schedule it: three times a day, inside the active hours.** A trigger at noon and
-another at midnight is a pattern no person has. Schedule it in the morning, mid-morning and
-evening instead (for example 07:40, 10:40 and 20:40, cron `40 7,10,20 * * *`) and let the
-12 h pause decide which of them actually runs:
+**When to schedule it: every hour, and let Instaclean decide.** A laptop is often off or
+asleep at the planned time, so a fixed trigger silently loses sessions. Schedule a check every
+hour in the daytime (for example cron `40 7-23 * * *`); each check is refused in a second unless
+a session is due:
 
-| Day | 07:40 | 10:40 | 20:40 |
-|---|---|---|---|
-| 1 | **runs** (ends ~08:10) | pause | **runs** (ends ~21:10) |
-| 2 | pause (until ~09:10) | **runs** (ends ~11:10) | pause (until ~23:10) |
-| 3 | **runs** | pause | **runs** |
+| Rule | Effect |
+|---|---|
+| 12 h pause after a full session | at most **two sessions a day** |
+| Preferred hours `07:00–09:30, 10:00–12:00, 18:30–22:00` | sessions normally start in the morning, mid-morning or evening |
+| **Catch-up** after 16 h without a session | if the Mac was off during the preferred hours, the session starts at the next check anyway, rather than being skipped (`INSTACLEAN_CATCHUP_AFTER_HOURS`, `0` = strict) |
+| Quiet hours `00:30–06:30` | never a session at night, catch-up included (`INSTACLEAN_QUIET_HOURS`) |
 
-So the start time changes from day to day, never falls at night, and averages about
-1.5 sessions (~750 likes) a day. If you prefer one session a day, schedule a single trigger
-inside one window. Unattended runs also wait a random 0–20 min before starting
+Typical day with the Mac on: one session in the morning window, one in the evening window
+(~1,000 likes). Mac off until the afternoon: a catch-up session when it comes back, the next
+one after the 12 h pause.
+
+If you prefer one session a day, raise `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` to `20`.
+Unattended runs also wait a random 0–20 min before starting
 (`INSTACLEAN_START_JITTER_MINUTES`), because a scheduler fires at the same minute every day.
 
 ```mermaid
 flowchart LR
     T([Daily trigger]) --> C{INSTACLEAN_ALLOW_UNATTENDED?}
     C -->|false| X1([Refused])
-    C -->|true| G{All stages done?<br/>12 h pause / 72 h cooldown over?<br/>inside active hours?}
+    C -->|true| G{All stages done?<br/>12 h pause / 72 h cooldown over?<br/>active hours, or catch-up<br/>outside quiet hours?}
     G -->|no| X2([Refused, nothing opened])
     G -->|yes| J[Random wait 0-20 min] --> E
     E{Login older than<br/>SESSION_MAX_DAYS?}
@@ -344,7 +348,7 @@ pacing between sessions, not how fast the clicks are.
 | Time per session | ~7–15 min | measured 2026-10-19: 500 verified unlikes in 7 min (`all`); `posts` takes longer |
 | Minimum pause between sessions | 12 h | enforced; `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` |
 | Pause after any block signal | 72 h | enforced; `INSTACLEAN_BLOCK_COOLDOWN_HOURS` |
-| When real sessions may start | 07:00–09:30, 10:00–12:00, 18:30–22:00 local | enforced; `INSTACLEAN_ACTIVE_HOURS` |
+| When real sessions may start | preferably 07:00–09:30, 10:00–12:00, 18:30–22:00; catch-up at other hours after 16 h without a session; never 00:30–06:30 | `INSTACLEAN_ACTIVE_HOURS`, `INSTACLEAN_CATCHUP_AFTER_HOURS`, `INSTACLEAN_QUIET_HOURS` |
 
 ### 30,000 likes in practice
 
@@ -496,6 +500,8 @@ Copy `.env.example` to `.env` (gitignored). **Never put a password, cookie or to
 | `INSTACLEAN_MIN_HOURS_BETWEEN_SESSIONS` | `12` | enforced pause after a full-size real session |
 | `INSTACLEAN_BLOCK_COOLDOWN_HOURS` | `72` | enforced pause after any block/limit/CAPTCHA/identity stop |
 | `INSTACLEAN_ACTIVE_HOURS` | `07:00-09:30,10:00-12:00,18:30-22:00` | local-time windows in which a real session may **start**; empty = any hour. Dry runs are never restricted |
+| `INSTACLEAN_CATCHUP_AFTER_HOURS` | `16` | outside the active hours, start anyway if no real session ended in the last N hours (a missed slot); `0` = never start outside them |
+| `INSTACLEAN_QUIET_HOURS` | `00:30-06:30` | local hours in which no real session ever starts, catch-up included |
 | `INSTACLEAN_START_JITTER_MINUTES` | `20` | unattended runs wait a random 0..N minutes (max 120) before opening the browser |
 | `INSTACLEAN_VERIFY_RECHECK_SECONDS` / `INSTACLEAN_VERIFY_RECHECKS` | `45` / `2` | Instagram applies bulk unlikes asynchronously: items still listed after the reload are re-checked (read-only) this many times before counting as failed |
 | `INSTACLEAN_ALLOW_UNATTENDED` | `false` | allows `--real --unattended` (no UNLIKE prompt) for scheduled **normal** sessions only, after all stages; pauses, cooldowns and stops still apply |
@@ -543,7 +549,7 @@ is **not** meant to evade detection and it will not.
 |---|---|
 | `stage_gate` | Run the step named in the message |
 | `cooldown` | Wait until the time shown (`--status`) |
-| `outside_active_hours` | Normal: real sessions only start inside `INSTACLEAN_ACTIVE_HOURS`. Run it (or schedule it) inside a window |
+| `outside_active_hours` | Normal: outside the preferred hours a session starts only as a catch-up (no session in the last 16 h), and never in the quiet hours. The next check will start it when allowed |
 | `Real mode refused` | Set `INSTACLEAN_DRY_RUN=false` in `.env` **and** pass `--real` |
 | `selector_failure`, "Menu navigation failed" | Instagram changed its layout or your language isn't covered. Run with `--debug`, look at `Diagnostics:` in `logs/`, adjust `instaclean/selectors.py` |
 | `selection_mismatch` | Instagram may cap how many items can be selected. Lower `INSTACLEAN_BATCH_MAX` |

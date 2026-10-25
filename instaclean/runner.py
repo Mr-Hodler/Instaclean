@@ -126,23 +126,42 @@ def check_cooldown(store: CheckpointStore, cfg: Config, now: datetime | None = N
             )
 
 
-def check_active_hours(cfg: Config, now: datetime | None = None) -> None:
-    """Refuse REAL mode outside the local-time windows of INSTACLEAN_ACTIVE_HOURS.
+def check_active_hours(cfg: Config, now: datetime | None = None,
+                       store: CheckpointStore | None = None) -> str:
+    """Decide whether a REAL session may start now (local time).
 
-    Keeps sessions at the hours a person is normally on the phone (morning,
-    mid-morning, evening), never at night. Dry runs are never restricted.
+    - inside INSTACLEAN_ACTIVE_HOURS            -> "active"
+    - inside INSTACLEAN_QUIET_HOURS (night)     -> refused, always
+    - outside the windows, but no real session ended in the last
+      INSTACLEAN_CATCHUP_AFTER_HOURS (a slot was missed, e.g. Mac off)
+                                                -> "catch-up"
+    - otherwise                                 -> refused (wait for a window)
+    Dry runs are never restricted.
     """
     windows = parse_active_hours(cfg.active_hours)
     if cfg.dry_run or not windows:
-        return
+        return "active"
     local = (now or _now()).astimezone()
     minute = local.hour * 60 + local.minute
     if any(start <= minute < end for start, end in windows):
-        return
+        return "active"
+    if any(start <= minute < end for start, end in parse_active_hours(cfg.quiet_hours)):
+        raise StopCondition(
+            StopReason.OUTSIDE_ACTIVE_HOURS,
+            f"it is {local:%H:%M}, inside quiet hours {cfg.quiet_hours}: no session at night",
+        )
+    if cfg.catchup_after_hours > 0 and store is not None:
+        last = store.load_state().get("last_real_session")
+        ended = datetime.fromisoformat(last["ended_at"]) if last else None
+        since = None if ended is None else (now or _now()) - ended
+        if since is None or since >= timedelta(hours=cfg.catchup_after_hours):
+            log.info("Catch-up: outside active hours (%s) but no real session in the last "
+                     "%.0f h, starting anyway", cfg.active_hours, cfg.catchup_after_hours)
+            return "catch-up"
     raise StopCondition(
         StopReason.OUTSIDE_ACTIVE_HOURS,
-        f"it is {local:%H:%M} local time; real sessions only start in "
-        f"{cfg.active_hours} (INSTACLEAN_ACTIVE_HOURS)",
+        f"it is {local:%H:%M} local time; real sessions start in {cfg.active_hours} "
+        f"(or as a catch-up after {cfg.catchup_after_hours:.0f} h without a session)",
     )
 
 
@@ -179,7 +198,7 @@ class SessionRunner:
 
         stage = check_gate(self.store, self.cfg, limit)
         check_cooldown(self.store, self.cfg)
-        check_active_hours(self.cfg)
+        check_active_hours(self.cfg, store=self.store)
         max_actions = session_action_cap(self.rng, self.cfg)
         if limit is not None:
             max_actions = min(max_actions, limit)

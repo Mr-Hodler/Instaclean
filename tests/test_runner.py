@@ -332,9 +332,66 @@ def test_runner_refuses_real_session_outside_active_hours(cfg, store, rng):
     window = f"{other // 60:02d}:{other % 60:02d}-{(other + 1) // 60:02d}:{(other + 1) % 60:02d}"
     ui = FakeLikesUI(1000)
     with pytest.raises(StopCondition) as e:
-        run(ui, real(cfg, active_hours=window), store, rng)
+        run(ui, real(cfg, active_hours=window, catchup_after_hours=0), store, rng)
     assert e.value.reason is StopReason.OUTSIDE_ACTIVE_HOURS
     assert ui.unlike_calls == 0
+
+
+# ---- catch-up: active hours are preferred, not a reason to skip a day ----------------
+W = "07:00-09:30,10:00-12:00,18:30-22:00"
+
+
+def _last_real(store, hours_ago, now):
+    from datetime import timedelta
+    store.record_real_session((now - timedelta(hours=hours_ago)).isoformat(), 500)
+
+
+def test_catch_up_outside_windows_after_a_missed_slot(cfg, store):
+    from instaclean.runner import check_active_hours
+    c = real(cfg, active_hours=W)
+    now = _at(16, 49)
+    assert check_active_hours(c, now=now, store=store) == "catch-up"  # never ran
+    _last_real(store, 20, now)
+    assert check_active_hours(c, now=now, store=store) == "catch-up"  # missed slot
+    assert check_active_hours(c, now=_at(8, 0), store=store) == "active"
+
+
+def test_no_catch_up_when_a_session_ran_recently(cfg, store):
+    from instaclean.runner import check_active_hours
+    c = real(cfg, active_hours=W)
+    now = _at(16, 49)
+    _last_real(store, 5, now)
+    with pytest.raises(StopCondition) as e:
+        check_active_hours(c, now=now, store=store)
+    assert e.value.reason is StopReason.OUTSIDE_ACTIVE_HOURS
+
+
+def test_quiet_hours_block_even_catch_up(cfg, store):
+    from instaclean.runner import check_active_hours
+    c = real(cfg, active_hours=W)
+    for h in (0, 1, 3, 5):
+        with pytest.raises(StopCondition):
+            check_active_hours(c, now=_at(h, 45), store=store)  # never ran, still night
+    assert check_active_hours(c, now=_at(6, 45), store=store) == "catch-up"
+
+
+def test_strict_mode_without_catch_up(cfg, store):
+    from instaclean.runner import check_active_hours
+    with pytest.raises(StopCondition):
+        check_active_hours(real(cfg, active_hours=W, catchup_after_hours=0),
+                           now=_at(16, 49), store=store)
+
+
+def test_runner_runs_a_catch_up_session_outside_windows(cfg, store, rng):
+    from datetime import datetime
+    _ready_all(store)
+    now = datetime.now().astimezone()
+    minute = now.hour * 60 + now.minute
+    other = (minute + 120) % (24 * 60 - 1)
+    window = f"{other // 60:02d}:{other % 60:02d}-{(other + 1) // 60:02d}:{(other + 1) % 60:02d}"
+    ui = FakeLikesUI(1000)
+    s = run(ui, real(cfg, active_hours=window, quiet_hours=""), store, rng)
+    assert s.status == "session_limit_reached" and ui.unlike_calls >= 1
 
 
 def test_non_block_stop_does_not_trigger_block_cooldown(cfg, store, rng):
